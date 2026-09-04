@@ -21,6 +21,14 @@ devices/*/*.glb
 # the device's .kicad_sch / circuit.cir. Regenerate after checkout instead of committing.
 devices/*/map.json
 devices/*/faults.json
+# .kicad_pcb is ALSO generated now (milestone 5): the importer auto-places it
+# from the schematic via backend/scripts/build_pcb.py -- it's not hand-authored
+# board layout, so it's generated output like circuit.cir's siblings above.
+devices/*/*.kicad_pcb
+# kicad-cli/pcbnew auto-create these project-state files as a side effect of
+# touching a .kicad_sch/.kicad_pcb with no project file yet -- not source.
+devices/*/*.kicad_pro
+devices/*/*.kicad_prl
 
 # Editors / OS
 .vscode/

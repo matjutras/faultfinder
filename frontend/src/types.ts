@@ -4,6 +4,8 @@ export interface TestPoint {
   node: string;
   x_mm: number;
   y_mm: number;
+  pcb_x_mm?: number;
+  pcb_y_mm?: number;
 }
 
 export interface Fault {
@@ -21,6 +23,9 @@ export interface Device {
   schematic_sch: string;
   testpoints: TestPoint[];
   faults: Fault[];
+  board_size_mm?: { width: number; height: number };
+  board_thickness_mm?: number;
+  pcb_glb?: string;
 }
 
 export interface MeasureResult {

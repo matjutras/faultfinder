@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import devices, fault_gen, kicad_import, netlist, spice_runner
+from . import devices, fault_gen, kicad_import, netlist, pcb_import, spice_runner
 
 HEALTHY_FAULT = {"id": "healthy", "name": "No fault", "difficulty": "n/a", "patch": []}
 
@@ -35,8 +35,12 @@ class MeasureRequest(BaseModel):
 def get_device(device_id: str):
     try:
         device = devices.load_device(device_id)
-        device["testpoints"] = devices.load_map(device_id)["testpoints"]
+        device_map = devices.load_map(device_id)
+        device["testpoints"] = device_map["testpoints"]
         device["faults"] = devices.load_faults(device_id)
+        device["board_size_mm"] = device_map.get("board_size_mm")
+        device["board_thickness_mm"] = device_map.get("board_thickness_mm")
+        device["pcb_glb"] = "pcb.glb" if device_map.get("board_size_mm") else None
         return device
     except devices.DeviceNotFound:
         raise HTTPException(status_code=404, detail="device not found")
@@ -51,8 +55,25 @@ def import_device(device_id: str):
     except kicad_import.KicadCliError as e:
         raise HTTPException(status_code=502, detail=f"kicad-cli failed: {e}")
 
+    try:
+        pcb_manifest = pcb_import.import_pcb(device_id)
+    except pcb_import.PcbImportError as e:
+        raise HTTPException(status_code=502, detail=f"PCB import failed: {e}")
+
+    pads_by_tp = pcb_manifest["pads"]
+    for tp in testpoints:
+        pad = pads_by_tp.get(tp["tp_id"])
+        if pad:
+            tp["pcb_x_mm"] = pad["x_mm"]
+            tp["pcb_y_mm"] = pad["y_mm"]
+
     map_path = devices.device_dir(device_id) / "map.json"
-    map_path.write_text(json.dumps({"id": device_id, "testpoints": testpoints}, indent=2) + "\n")
+    map_path.write_text(json.dumps({
+        "id": device_id,
+        "testpoints": testpoints,
+        "board_size_mm": pcb_manifest["board_size_mm"],
+        "board_thickness_mm": pcb_manifest["board_thickness_mm"],
+    }, indent=2) + "\n")
 
     circuit = devices.load_circuit(device_id)
     faults = [HEALTHY_FAULT] + fault_gen.generate_fault_pool(circuit)

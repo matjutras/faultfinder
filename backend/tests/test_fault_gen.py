@@ -21,6 +21,18 @@ def test_exactly_one_fault_is_marked_intermittent():
     assert intermittent[0]["kind"] == "component_failed"
 
 
+def test_the_intermittent_fault_is_categorized_hard_not_easy():
+    # Regression test: the intermittent fault is always per_component[0],
+    # which for an R/L/D component is that component's "open circuit" fault
+    # -- normally tagged "easy". A connection that only sometimes reads
+    # faulted is genuinely harder to diagnose than a stable one, so it must
+    # not stay in the "easy" tier just because its non-intermittent sibling
+    # faults of the same kind are.
+    pool = fault_gen.generate_fault_pool(CIRCUIT)
+    intermittent = next(f for f in pool if f.get("intermittent"))
+    assert intermittent["difficulty"] == "hard"
+
+
 def test_net_pair_shorts_are_deduped_and_classified():
     pool = fault_gen.generate_fault_pool(CIRCUIT)
     shorts = [f for f in pool if f["kind"] in ("short_to_ground", "short_to_vcc", "short_between_nodes")]

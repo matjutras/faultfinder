@@ -153,7 +153,11 @@ def generate_fault_pool(circuit_text: str) -> list[dict]:
     # while still exercising the mechanic. By construction, the first fault
     # appended for any component is always an "open" fault, so per_component[0]
     # (if any components exist) is a reasonable, easy-to-reason-about pick.
+    # It's bumped to "hard" regardless of the underlying fault's own tier: a
+    # connection that only sometimes reads faulted is a harder diagnosis than
+    # a stable one, so it can't stay classified as "easy" just because R/L/D
+    # opens normally are.
     if per_component:
-        per_component[0] = {**per_component[0], "intermittent": True}
+        per_component[0] = {**per_component[0], "difficulty": "hard", "intermittent": True}
 
     return per_component + net_pair
