@@ -1,0 +1,6 @@
+* Diode Indicator - FaultFinder device diode_indicator_03
+V1 VIN 0 DC 9
+R1 VIN N1 470
+D1 N1 0 DMOD
+.model DMOD D
+.end

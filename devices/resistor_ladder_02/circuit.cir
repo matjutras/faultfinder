@@ -1,0 +1,6 @@
+* Three-Resistor Ladder - FaultFinder device resistor_ladder_02
+V1 VIN 0 DC 12
+R1 VIN N1 1k
+R2 N1 N2 2k
+R3 N2 0 3k
+.end

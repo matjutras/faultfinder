@@ -1,0 +1,5 @@
+{
+  "id": "resistor_ladder_02",
+  "name": "Three-Resistor Ladder",
+  "schematic_sch": "resistor_ladder_02.kicad_sch"
+}
