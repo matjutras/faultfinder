@@ -1,11 +1,14 @@
 import json
+import random
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import devices, kicad_import, netlist, spice_runner
+from . import devices, fault_gen, kicad_import, netlist, spice_runner
+
+HEALTHY_FAULT = {"id": "healthy", "name": "No fault", "difficulty": "n/a", "patch": []}
 
 app = FastAPI(title="FaultFinder API")
 
@@ -50,7 +53,13 @@ def import_device(device_id: str):
 
     map_path = devices.device_dir(device_id) / "map.json"
     map_path.write_text(json.dumps({"id": device_id, "testpoints": testpoints}, indent=2) + "\n")
-    return {"testpoints": testpoints}
+
+    circuit = devices.load_circuit(device_id)
+    faults = [HEALTHY_FAULT] + fault_gen.generate_fault_pool(circuit)
+    faults_path = devices.device_dir(device_id) / "faults.json"
+    faults_path.write_text(json.dumps(faults, indent=2) + "\n")
+
+    return {"testpoints": testpoints, "faults": faults}
 
 
 @app.post("/api/devices/{device_id}/measure")
@@ -70,7 +79,10 @@ def measure(device_id: str, req: MeasureRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    patched = netlist.apply_patch(circuit, fault["patch"])
+    patch = fault["patch"]
+    if fault.get("intermittent") and random.random() < 0.5:
+        patch = []  # a "miss": the connection happens to be fine this time
+    patched = netlist.apply_patch(circuit, patch)
 
     try:
         node_voltages = spice_runner.simulate(patched)

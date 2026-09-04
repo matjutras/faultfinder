@@ -16,9 +16,11 @@ backend/.pytest_cache/
 # hand-authored source, not generated output. Add it here once kicad-cli produces it.
 devices/*/*.png
 devices/*/*.glb
-# map.json IS generated now: POST /api/devices/{id}/import (backend/app/kicad_import.py)
-# regenerates it from the device's .kicad_sch. Regenerate after checkout instead of committing.
+# map.json and faults.json ARE generated now: POST /api/devices/{id}/import
+# (backend/app/kicad_import.py + backend/app/fault_gen.py) regenerates both from
+# the device's .kicad_sch / circuit.cir. Regenerate after checkout instead of committing.
 devices/*/map.json
+devices/*/faults.json
 
 # Editors / OS
 .vscode/

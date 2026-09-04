@@ -10,7 +10,9 @@ export interface Fault {
   id: string;
   name: string;
   difficulty: string;
-  patch: { ref: string; to: string }[];
+  kind?: string;
+  intermittent?: boolean;
+  patch: Record<string, unknown>[];
 }
 
 export interface Device {

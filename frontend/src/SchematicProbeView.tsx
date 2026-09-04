@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { deviceAssetUrl, getDevice, measure } from './api';
+import type { Difficulty } from './faultSelection';
+import { pickRandomFault } from './faultSelection';
 import { schematicMmToPixels } from './kicadCoords';
 import { toggleProbe } from './probeSelection';
 import './SchematicProbeView.css';
@@ -7,6 +9,7 @@ import type { Device, MeasureResult } from './types';
 
 const SCHEMATIC_WIDTH = 500;
 const SCHEMATIC_HEIGHT = 354;
+const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard', 'random'];
 
 interface Props {
   deviceId: string;
@@ -15,12 +18,20 @@ interface Props {
 export function SchematicProbeView({ deviceId }: Props) {
   const [device, setDevice] = useState<Device | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [difficulty, setDifficulty] = useState<Difficulty>('easy');
   const [faultId, setFaultId] = useState('healthy');
+  const [revealed, setRevealed] = useState(false);
   const [result, setResult] = useState<MeasureResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getDevice(deviceId).then(setDevice).catch((e) => setError(e.message));
+    getDevice(deviceId)
+      .then((d) => {
+        setDevice(d);
+        setFaultId(pickRandomFault(d.faults, difficulty).id);
+      })
+      .catch((e) => setError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId]);
 
   useEffect(() => {
@@ -35,26 +46,36 @@ export function SchematicProbeView({ deviceId }: Props) {
   if (error && !device) return <p className="error">Error: {error}</p>;
   if (!device) return <p>Loading device…</p>;
 
+  const currentFault = device.faults.find((f) => f.id === faultId);
+
+  function newFault(tier: Difficulty) {
+    if (!device) return;
+    setDifficulty(tier);
+    setFaultId(pickRandomFault(device.faults, tier).id);
+    setRevealed(false);
+  }
+
   return (
     <div className="schematic-probe-view">
       <h2>{device.name}</h2>
 
       <label>
-        Fault:{' '}
-        <select
-          value={faultId}
-          onChange={(e) => {
-            setFaultId(e.target.value);
-            setSelected([]);
-          }}
-        >
-          {device.faults.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
+        Difficulty:{' '}
+        <select value={difficulty} onChange={(e) => newFault(e.target.value as Difficulty)}>
+          {DIFFICULTIES.map((tier) => (
+            <option key={tier} value={tier}>
+              {tier}
             </option>
           ))}
         </select>
-      </label>
+      </label>{' '}
+      <button type="button" onClick={() => newFault(difficulty)}>
+        New Fault
+      </button>{' '}
+      <button type="button" onClick={() => setRevealed((r) => !r)}>
+        {revealed ? 'Hide fault' : 'Reveal fault'}
+      </button>
+      {revealed && currentFault && <p className="revealed-fault">Fault: {currentFault.name}</p>}
 
       <div className="schematic-stage" style={{ width: SCHEMATIC_WIDTH, height: SCHEMATIC_HEIGHT }}>
         <kicanvas-embed
