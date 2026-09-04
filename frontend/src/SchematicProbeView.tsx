@@ -3,7 +3,7 @@ import { deviceAssetUrl, getDevice, measure } from './api';
 import type { Difficulty } from './faultSelection';
 import { pickRandomFault } from './faultSelection';
 import { schematicMmToPixels } from './kicadCoords';
-import { toggleProbe } from './probeSelection';
+import { toggleProbe, visibleResult } from './probeSelection';
 import './SchematicProbeView.css';
 import type { Device, MeasureResult } from './types';
 
@@ -47,6 +47,7 @@ export function SchematicProbeView({ deviceId }: Props) {
   if (!device) return <p>Loading device…</p>;
 
   const currentFault = device.faults.find((f) => f.id === faultId);
+  const shown = visibleResult(result, selected);
 
   function newFault(tier: Difficulty) {
     if (!device) return;
@@ -104,12 +105,12 @@ export function SchematicProbeView({ deviceId }: Props) {
 
       {error && <p className="error">Error: {error}</p>}
 
-      {result && selected.length === 2 && (
+      {shown && (
         <div className="readout">
-          <span className="value">{result.differential_volts.toFixed(3)} V</span>
+          <span className="value">{shown.differential_volts.toFixed(3)} V</span>
           <span className="probes">
-            {selected[0]} ({result.probes[selected[0]].toFixed(3)} V) &rarr; {selected[1]} (
-            {result.probes[selected[1]].toFixed(3)} V)
+            {selected[0]} ({shown.probes[selected[0]].toFixed(3)} V) &rarr; {selected[1]} (
+            {shown.probes[selected[1]].toFixed(3)} V)
           </span>
         </div>
       )}

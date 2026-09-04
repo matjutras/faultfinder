@@ -12,6 +12,7 @@ const DEVICE: Device = {
   testpoints: [
     { tp_id: 'TP1', label: 'Input (VIN)', node: 'VIN', x_mm: 101.6, y_mm: 81.28 },
     { tp_id: 'TP2', label: 'Divider Output (VOUT)', node: 'VOUT', x_mm: 101.6, y_mm: 111.76 },
+    { tp_id: 'TP3', label: 'Ground (0V)', node: '0', x_mm: 101.6, y_mm: 96.52 },
   ],
   faults: [
     { id: 'healthy', name: 'No fault', difficulty: 'n/a', patch: [] },
@@ -103,6 +104,38 @@ describe('SchematicProbeView', () => {
     await user.click(screen.getByTitle('Divider Output (VOUT)'));
 
     expect(screen.queryByText('9.000 V')).not.toBeInTheDocument();
+  });
+
+  it('does not crash when a third probe is placed after two are already selected, and shows the new pair once measured', async () => {
+    const user = userEvent.setup();
+    // Regression test for a crash: clicking a third test point slides the
+    // selection window (drops TP1, keeps TP2, adds TP3), but the stale
+    // `result` for the old TP1/TP2 pair was rendered for one tick before the
+    // effect refetched it, and `result.probes.TP3` didn't exist -- .toFixed()
+    // on undefined threw and unmounted the whole tree (no error boundary).
+    vi.spyOn(api, 'measure').mockImplementation((_deviceId, tpIds, faultId) => {
+      const volts: Record<string, number> = { TP1: 9, TP2: 0, TP3: 0 };
+      const probes = Object.fromEntries(tpIds.map((id) => [id, volts[id]]));
+      return Promise.resolve({
+        fault_id: faultId,
+        probes,
+        differential_volts: probes[tpIds[0]] - probes[tpIds[1]],
+      });
+    });
+
+    render(<SchematicProbeView deviceId="voltage_divider_01" />);
+
+    await screen.findByText('Simple Voltage Divider');
+    await placeBothProbes(user); // TP1, TP2
+    await screen.findByText('9.000 V');
+
+    await user.click(screen.getByTitle('Ground (0V)')); // third probe: TP3
+
+    // must not throw and unmount the component tree
+    expect(await screen.findByText('Simple Voltage Divider')).toBeInTheDocument();
+    // and it must settle on the new pair's real reading (TP2, TP3), not stay
+    // stuck showing the old TP1/TP2 value or a blank readout
+    expect(await screen.findByText('0.000 V')).toBeInTheDocument();
   });
 
   it('"New Fault" can pick a different fault within the same tier and re-measures without reclicking probes', async () => {
