@@ -1,0 +1,5 @@
+* Simple Voltage Divider - FaultFinder device voltage_divider_01
+V1 VIN 0 DC 9
+R1 VIN VOUT 1k
+R2 VOUT 0 2k
+.end

@@ -1,0 +1,25 @@
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
+
+# Backend
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.pytest_cache/
+*.pyc
+
+# Generated per-device output (regenerate from KiCad source; see CLAUDE.md).
+# circuit.cir is NOT ignored yet: until the importer exists (milestone 4+) it's
+# hand-authored source, not generated output. Add it here once kicad-cli produces it.
+devices/*/*.png
+devices/*/*.glb
+# map.json IS generated now: POST /api/devices/{id}/import (backend/app/kicad_import.py)
+# regenerates it from the device's .kicad_sch. Regenerate after checkout instead of committing.
+devices/*/map.json
+
+# Editors / OS
+.vscode/
+.DS_Store

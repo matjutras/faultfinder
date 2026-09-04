@@ -1,0 +1,4 @@
+[
+  { "id": "healthy", "name": "No fault", "difficulty": "n/a", "patch": [] },
+  { "id": "r1_open", "name": "R1 open circuit", "difficulty": "easy", "patch": [{ "ref": "R1", "to": "1e12" }] }
+]

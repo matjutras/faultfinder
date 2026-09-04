@@ -1,0 +1,51 @@
+.schematic-probe-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.schematic-stage {
+  position: relative;
+  border: 1px solid #ccc;
+  background: #fff;
+}
+
+.schematic-stage img {
+  display: block;
+}
+
+.probe-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #1b6fd6;
+  background: rgba(27, 111, 214, 0.15);
+  color: #1b6fd6;
+  font-size: 9px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.probe-marker.selected {
+  background: #1b6fd6;
+  color: #fff;
+}
+
+.readout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-family: monospace;
+}
+
+.readout .value {
+  font-size: 1.5rem;
+}
+
+.error {
+  color: #c0392b;
+}

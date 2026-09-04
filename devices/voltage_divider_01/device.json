@@ -1,0 +1,5 @@
+{
+  "id": "voltage_divider_01",
+  "name": "Simple Voltage Divider",
+  "schematic_sch": "voltage_divider_01.kicad_sch"
+}
