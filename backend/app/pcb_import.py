@@ -44,14 +44,15 @@ def import_pcb(device_id: str) -> dict:
     result = subprocess.run(
         ["kicad-cli", "pcb", "export", "glb", str(out_pcb_path), "-o", str(glb_path),
          # Off by default -- without these the board renders as a bare green
-         # slab plus component bodies, with no pads or TP silkscreen labels
-         # visible at all, even though both exist in the .kicad_pcb (confirmed
-         # by re-exporting one device with these flags and comparing the
-         # rendered result before adding this generically for every device).
-         # No --include-tracks/--include-zones: build_pcb.py never draws any
-         # copper geometry for any device (grid-placed, unrouted, by design --
-         # see its own docstring), so there's nothing those flags would add.
-         "--include-pads", "--include-silkscreen", "--include-soldermask"],
+         # slab plus component bodies, with no pads, TP silkscreen labels, or
+         # copper visible at all, even though all three exist in the
+         # .kicad_pcb (confirmed by re-exporting one device with these flags
+         # and comparing the rendered result before adding this generically
+         # for every device). build_pcb.py now draws real point-to-point
+         # copper between same-net pads (see its own docstring), hence
+         # --include-tracks; still no --include-zones, since nothing ever
+         # creates a zone/pour.
+         "--include-pads", "--include-silkscreen", "--include-soldermask", "--include-tracks"],
         capture_output=True, text=True, timeout=60, env=env,
     )
     if result.returncode != 0:

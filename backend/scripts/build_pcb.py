@@ -11,9 +11,13 @@ reuses the same `kicad-cli sch export netlist --format kicadxml` the
 schematic-side importer already produces, and drives placement + net
 assignment from it directly via the pcbnew API.
 
-Placement is a plain grid -- no routing, since the only thing v1 needs out of
-the PCB is a 3D glb for visual/probe purposes, not a manufacturable board (see
-CLAUDE.md milestone 5).
+Placement is a plain grid, and routing (below) is straight point-to-point
+copper between same-net pads in placement order -- not DRC-clean/manufacturable
+routing (no via/crossing avoidance), since the only thing v1 needs out of the
+PCB is a 3D glb for visual/probe purposes (see CLAUDE.md milestone 5). The
+goal is just that the board reads as one connected circuit instead of
+floating unconnected parts, which a straight chain already achieves given the
+simple grid layout with generous pad spacing.
 
 Footprint choice is generic across devices: keyed by the schematic symbol's
 libsource `part` name (e.g. "R", "D", "TestPoint"), same spirit as
@@ -49,6 +53,7 @@ DEFAULT_FOOTPRINT: dict[str, tuple[str, str]] = {
 GRID_PITCH_MM = 12
 MARGIN_MM = 6
 BOARD_THICKNESS_MM = 1.51  # KiCad's default stackup total; fixed since we never customize it
+TRACK_WIDTH_MM = 0.25
 
 
 class PcbGenError(Exception):
@@ -122,6 +127,7 @@ def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
 
     cols = max(1, int(len(placeable) ** 0.5 + 0.999))
     pads_by_ref: dict[str, dict] = {}
+    pads_by_net: dict[str, list] = {}
     for i, ref in enumerate(placeable):
         info = comps[ref]
         key = _footprint_key(ref, info["part"])
@@ -139,9 +145,29 @@ def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
             net_name = net_by_pin.get((ref, pad.GetNumber()))
             if net_name and net_name in net_items:
                 pad.SetNet(net_items[net_name])
+                pads_by_net.setdefault(net_name, []).append(pad)
 
         if ref.startswith("TP"):
             pads_by_ref[ref] = {"x_mm": x_mm, "y_mm": y_mm}
+
+    # Straight point-to-point copper between same-net pads, so the board
+    # reads as one connected circuit instead of floating unconnected parts
+    # (see module docstring -- not DRC-clean routing, just visual/electrical
+    # continuity, which a straight chain already gives with this simple,
+    # generously-spaced grid layout).
+    track_width = _mm(TRACK_WIDTH_MM)
+    for net_name, pads in pads_by_net.items():
+        if len(pads) < 2:
+            continue
+        ordered = sorted(pads, key=lambda p: (p.GetPosition().x, p.GetPosition().y))
+        for a, b in zip(ordered, ordered[1:]):
+            track = pcbnew.PCB_TRACK(board)
+            track.SetStart(a.GetPosition())
+            track.SetEnd(b.GetPosition())
+            track.SetWidth(track_width)
+            track.SetLayer(pcbnew.F_Cu)
+            track.SetNet(net_items[net_name])
+            board.Add(track)
 
     rows = max(1, -(-len(placeable) // cols))
     # components span [MARGIN, MARGIN + (n-1)*PITCH] on each axis, so a board
