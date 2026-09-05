@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pcbCameraFraming, pcbMmToThreeVec3 } from './kicadCoords';
+import { pcbCameraFraming, pcbHitTargetWorldRadius, pcbMmToThreeVec3 } from './kicadCoords';
 
 describe('pcbMmToThreeVec3', () => {
   it('maps board mm to meters with NO axis flip -- kicad-cli glb export already bakes this', () => {
@@ -55,5 +55,32 @@ describe('pcbCameraFraming', () => {
     expect(distOf(small)).toBeGreaterThan(0.036); // board diagonal-ish, so it's not inside the board
     expect(distOf(big)).toBeGreaterThan(distOf(small));
     expect(big.far).toBeGreaterThan(small.far);
+  });
+});
+
+describe('pcbHitTargetWorldRadius', () => {
+  // Regression coverage for the mobile tap-target fix: the invisible probe
+  // hit-target sphere used to be a fixed 0.0006m radius (the same as the
+  // *visible* dot), which projects to only a couple of screen px -- nowhere
+  // near a usable mobile touch target, and worse the closer OrbitControls
+  // zoomed in. This computes the world radius needed for a ~44px on-screen
+  // target at the *current* camera distance, every frame.
+
+  function projectedScreenPx(worldRadius: number, distanceM: number, fovDeg: number, canvasHeightPx: number): number {
+    const fovRad = (fovDeg * Math.PI) / 180;
+    return (2 * worldRadius * canvasHeightPx) / (2 * Math.tan(fovRad / 2) * distanceM);
+  }
+
+  it('produces a world radius that projects back to exactly the requested screen pixel size', () => {
+    const radius = pcbHitTargetWorldRadius(0.1, 40, 400, 44);
+    expect(projectedScreenPx(radius, 0.1, 40, 400)).toBeCloseTo(44, 6);
+  });
+
+  it('scales linearly with camera distance, so the on-screen size stays constant as the user zooms', () => {
+    // This is exactly the bug a fixed radius would reintroduce: without this
+    // scaling, zooming out would shrink the effective tap target to nothing.
+    const near = pcbHitTargetWorldRadius(0.1, 40, 400, 44);
+    const far = pcbHitTargetWorldRadius(0.3, 40, 400, 44);
+    expect(far).toBeCloseTo(near * 3, 6);
   });
 });

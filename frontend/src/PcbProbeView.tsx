@@ -5,7 +5,7 @@ import type { Mesh, PerspectiveCamera } from 'three';
 import { deviceAssetUrl, getDevice, measure } from './api';
 import type { Difficulty } from './faultSelection';
 import { pickRandomFault } from './faultSelection';
-import { pcbCameraFraming, pcbMmToThreeVec3 } from './kicadCoords';
+import { pcbCameraFraming, pcbHitTargetWorldRadius, pcbMmToThreeVec3 } from './kicadCoords';
 import { toggleProbe, visibleResult } from './probeSelection';
 import './SchematicProbeView.css';
 import type { Device, MeasureResult } from './types';
@@ -49,9 +49,8 @@ export function ProbeMarker({
     const dy = camera.position.y - position[1];
     const dz = camera.position.z - position[2];
     const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const verticalFovRad = (((camera as PerspectiveCamera).fov ?? 40) * Math.PI) / 180;
-    const worldUnitsPerPixel = (2 * Math.tan(verticalFovRad / 2) * distance) / size.height;
-    const desiredWorldRadius = (HIT_TARGET_PX / 2) * worldUnitsPerPixel;
+    const fovDeg = (camera as PerspectiveCamera).fov ?? 40;
+    const desiredWorldRadius = pcbHitTargetWorldRadius(distance, fovDeg, size.height, HIT_TARGET_PX);
     hitMeshRef.current.scale.setScalar(desiredWorldRadius);
   });
 
