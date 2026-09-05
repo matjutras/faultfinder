@@ -53,3 +53,7 @@ Don't skip ahead to a later milestone until the current one has passing tests an
 
 - ngspice's own output is plain text, not JSON — the parser is the most fragile part of the backend. Give it real fixture output from an actual `ngspice -b` run in tests, not hand-written fake output.
 - kicad-cli's SPICE netlist export can silently omit components with no SPICE model (e.g. bare test-point symbols) — this is *why* the XML netlist export is used for test-point mapping instead.
+
+## Future work (not started — don't build yet)
+
+- **Probes placeable anywhere, not just at TP markers.** Test points currently render as their own visible symbol, and probing means clicking one of those. Eventually a probe should be placeable directly on any component pin/pad or anywhere along a wire (schematic) / copper trace (PCB), with no dedicated TP component required. When this is built, hit-testing must come from exact wire-segment/track coordinates parsed from the KiCad source — the same "no proximity-guessing" principle as the existing pin-mapping rule (see the schematic-view bullet above) — not from snapping to fixed TP components. Recorded here so it isn't lost once the wiring (schematic) and routing (PCB) work is in place; it depends on both being real geometry, not just net-label connectivity.
