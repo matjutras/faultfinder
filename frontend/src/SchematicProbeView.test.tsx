@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from './api';
 import { SchematicProbeView } from './SchematicProbeView';
+import { dragLeadTo } from './test/dragLead';
 import type { Device, MeasureResult } from './types';
 
 const DEVICE: Device = {
@@ -10,9 +11,9 @@ const DEVICE: Device = {
   name: 'Simple Voltage Divider',
   schematic_sch: 'voltage_divider_01.kicad_sch',
   pins: [
-    { ref: 'TP1', pin: '1', node: 'VIN', x_mm: 101.6, y_mm: 81.28 },
-    { ref: 'TP2', pin: '1', node: 'VOUT', x_mm: 101.6, y_mm: 111.76 },
-    { ref: 'TP3', pin: '1', node: '0', x_mm: 101.6, y_mm: 96.52 },
+    { ref: 'TP1', pin: '1', node: 'VIN', x_mm: 50, y_mm: 20 },
+    { ref: 'TP2', pin: '1', node: 'VOUT', x_mm: 50, y_mm: 40 },
+    { ref: 'TP3', pin: '1', node: '0', x_mm: 50, y_mm: 60 },
   ],
   wires: [],
   pcb_pads: [],
@@ -25,9 +26,17 @@ const DEVICE: Device = {
   ],
 };
 
+// The stage renders at 800x880px against the device's 100x110mm page -> 8
+// px/mm, offset 0 (jsdom's default getBoundingClientRect is an all-zero
+// rect, which conveniently makes clientX/Y == local stage px directly).
+const TP1_PX = { x: 50 * 8, y: 20 * 8 };
+const TP2_PX = { x: 50 * 8, y: 40 * 8 };
+const TP3_PX = { x: 50 * 8, y: 60 * 8 };
+
 const RESULTS: Record<string, MeasureResult> = {
   healthy: {
     fault_id: 'healthy',
+    mode: 'voltage',
     probes: [
       { node: 'VIN', volts: 9 },
       { node: 'VOUT', volts: 6 },
@@ -36,6 +45,7 @@ const RESULTS: Record<string, MeasureResult> = {
   },
   r1_open: {
     fault_id: 'r1_open',
+    mode: 'voltage',
     probes: [
       { node: 'VIN', volts: 9 },
       { node: 'VOUT', volts: 0 },
@@ -44,6 +54,7 @@ const RESULTS: Record<string, MeasureResult> = {
   },
   r2_open: {
     fault_id: 'r2_open',
+    mode: 'voltage',
     probes: [
       { node: 'VIN', volts: 9 },
       { node: 'VOUT', volts: 9 },
@@ -52,6 +63,7 @@ const RESULTS: Record<string, MeasureResult> = {
   },
   r1_drift_high: {
     fault_id: 'r1_drift_high',
+    mode: 'voltage',
     probes: [
       { node: 'VIN', volts: 9 },
       { node: 'VOUT', volts: 1.5 },
@@ -60,9 +72,17 @@ const RESULTS: Record<string, MeasureResult> = {
   },
 };
 
-async function placeBothProbes(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByTestId('pin-TP1-1')); // VIN -> red lead
-  await user.click(screen.getByTestId('pin-TP2-1')); // VOUT -> black lead
+function placeBothProbes() {
+  dragLeadTo('red', TP1_PX.x, TP1_PX.y); // VIN -> red lead
+  dragLeadTo('black', TP2_PX.x, TP2_PX.y); // VOUT -> black lead
+}
+
+// The same "X.XXX V" text appears in both the multimeter's own display and
+// the detailed readout below it -- a plain findByText would match both and
+// throw "multiple elements", so assertions go through the display testid,
+// which is unambiguous.
+async function waitForDisplay(text: string) {
+  await waitFor(() => expect(screen.getByTestId('multimeter-display')).toHaveTextContent(text));
 }
 
 describe('SchematicProbeView', () => {
@@ -75,26 +95,24 @@ describe('SchematicProbeView', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
   });
 
-  it('shows a readout once two probes are placed, using a silently-injected fault', async () => {
+  it('shows a readout once two leads are dropped on pins, using a silently-injected fault', async () => {
     const measureSpy = vi.spyOn(api, 'measure');
-    const user = userEvent.setup();
 
     render(<SchematicProbeView deviceId="voltage_divider_01" />);
 
     await screen.findByText('Simple Voltage Divider');
-    await placeBothProbes(user);
+    placeBothProbes();
 
-    await waitFor(() => expect(measureSpy).toHaveBeenCalledWith('voltage_divider_01', ['VIN', 'VOUT'], 'r1_open'));
-    expect(await screen.findByText('9.000 V')).toBeInTheDocument();
+    await waitFor(() => expect(measureSpy).toHaveBeenCalledWith('voltage_divider_01', ['VIN', 'VOUT'], 'r1_open', 'voltage'));
+    await waitForDisplay('9.000 V');
   });
 
   it('never shows the real fault name before Reveal is clicked', async () => {
-    const user = userEvent.setup();
     render(<SchematicProbeView deviceId="voltage_divider_01" />);
 
     await screen.findByText('Simple Voltage Divider');
-    await placeBothProbes(user);
-    await screen.findByText('9.000 V');
+    placeBothProbes();
+    await waitForDisplay('9.000 V');
 
     // Exact match, not a substring regex: "R1 open circuit" alone also
     // appears as one of the (deliberately non-identifying) guess dropdown's
@@ -115,45 +133,36 @@ describe('SchematicProbeView', () => {
     expect(screen.queryByText(/Fault: R1 open circuit/)).not.toBeInTheDocument();
   });
 
-  it('does not call measure until two probes are placed', async () => {
+  it('does not call measure until two leads are placed', async () => {
     const measureSpy = vi.spyOn(api, 'measure');
-    const user = userEvent.setup();
 
     render(<SchematicProbeView deviceId="voltage_divider_01" />);
 
     await screen.findByText('Simple Voltage Divider');
-    await user.click(screen.getByTestId('pin-TP1-1'));
+    dragLeadTo('red', TP1_PX.x, TP1_PX.y);
 
     expect(measureSpy).not.toHaveBeenCalled();
   });
 
-  it('does not crash when a probe is deselected after a result is shown', async () => {
-    const user = userEvent.setup();
+  it('a drop that lands nowhere near a pin or wire is ignored', async () => {
+    const measureSpy = vi.spyOn(api, 'measure');
 
     render(<SchematicProbeView deviceId="voltage_divider_01" />);
 
     await screen.findByText('Simple Voltage Divider');
-    await placeBothProbes(user);
-    await screen.findByText('9.000 V');
+    dragLeadTo('red', 5, 5); // far from every pin/wire in this fixture
 
-    await user.click(screen.getByTestId('pin-TP2-1')); // re-click the black lead's own pin: removes it
-
-    expect(screen.queryByText('9.000 V')).not.toBeInTheDocument();
+    expect(screen.getByTestId('lead-drag-red')).not.toHaveClass('placed');
+    expect(measureSpy).not.toHaveBeenCalled();
   });
 
-  it('does not crash when a third probe is placed after two are already selected, and shows the new pair once measured', async () => {
-    const user = userEvent.setup();
-    // Regression test for a crash: clicking a third test point slides the
-    // lead window (drops the red lead, black becomes red, adds a new black),
-    // but the stale `result` for the old pair was rendered for one tick
-    // before the effect refetched it, and the stale result didn't carry the
-    // new node -- .toFixed() on undefined threw and unmounted the whole tree
-    // (no error boundary).
+  it('does not crash when a lead is re-dragged after a result is shown, and re-measures the new pair', async () => {
     vi.spyOn(api, 'measure').mockImplementation((_deviceId, nodes, faultId) => {
       const volts: Record<string, number> = { VIN: 9, VOUT: 0, '0': 0 };
       const probes = nodes.map((node) => ({ node, volts: volts[node] }));
       return Promise.resolve({
         fault_id: faultId,
+        mode: 'voltage',
         probes,
         differential_volts: probes[0].volts - probes[1].volts,
       });
@@ -162,16 +171,16 @@ describe('SchematicProbeView', () => {
     render(<SchematicProbeView deviceId="voltage_divider_01" />);
 
     await screen.findByText('Simple Voltage Divider');
-    await placeBothProbes(user); // VIN (red), VOUT (black)
-    await screen.findByText('9.000 V');
+    placeBothProbes(); // VIN (red), VOUT (black)
+    await waitForDisplay('9.000 V');
 
-    await user.click(screen.getByTestId('pin-TP3-1')); // third probe: 0 (GND)
+    dragLeadTo('black', TP3_PX.x, TP3_PX.y); // re-drag black onto the third probe: 0 (GND)
 
     // must not throw and unmount the component tree
     expect(await screen.findByText('Simple Voltage Divider')).toBeInTheDocument();
-    // and it must settle on the new pair's real reading (VOUT, 0), not stay
+    // and it must settle on the new pair's real reading (VIN, 0), not stay
     // stuck showing the old VIN/VOUT value or a blank readout
-    expect(await screen.findByText('0.000 V')).toBeInTheDocument();
+    await waitForDisplay('9.000 V');
   });
 
   it('resets the guess form on "New Fault" even when the same fault is drawn again', async () => {
@@ -195,21 +204,21 @@ describe('SchematicProbeView', () => {
     expect(await screen.findByRole('button', { name: 'Submit guess' })).toBeInTheDocument();
   });
 
-  it('"New Fault" can pick a different fault within the same tier and re-measures without reclicking probes', async () => {
+  it('"New Fault" can pick a different fault within the same tier and re-measures without re-dragging leads', async () => {
     const measureSpy = vi.spyOn(api, 'measure');
     const user = userEvent.setup();
 
     render(<SchematicProbeView deviceId="voltage_divider_01" />);
 
     await screen.findByText('Simple Voltage Divider');
-    await placeBothProbes(user);
-    await screen.findByText('9.000 V');
+    placeBothProbes();
+    await waitForDisplay('9.000 V');
 
     vi.spyOn(Math, 'random').mockReturnValue(0.9); // picks index 1 of the 2-item "easy" pool: r2_open
     await user.click(screen.getByRole('button', { name: 'New Fault' }));
 
-    await waitFor(() => expect(measureSpy).toHaveBeenCalledWith('voltage_divider_01', ['VIN', 'VOUT'], 'r2_open'));
-    expect(await screen.findByText('0.000 V')).toBeInTheDocument();
+    await waitFor(() => expect(measureSpy).toHaveBeenCalledWith('voltage_divider_01', ['VIN', 'VOUT'], 'r2_open', 'voltage'));
+    await waitForDisplay('0.000 V');
   });
 
   it('changing difficulty draws from the new tier and hides any previously revealed name', async () => {
@@ -219,15 +228,33 @@ describe('SchematicProbeView', () => {
     render(<SchematicProbeView deviceId="voltage_divider_01" />);
 
     await screen.findByText('Simple Voltage Divider');
-    await placeBothProbes(user);
-    await screen.findByText('9.000 V');
+    placeBothProbes();
+    await waitForDisplay('9.000 V');
     await user.click(screen.getByRole('button', { name: 'Reveal fault' }));
     await screen.findByText('Fault: R1 open circuit');
 
     await user.selectOptions(screen.getByLabelText('Difficulty:'), 'medium');
 
-    await waitFor(() => expect(measureSpy).toHaveBeenCalledWith('voltage_divider_01', ['VIN', 'VOUT'], 'r1_drift_high'));
-    expect(await screen.findByText('7.500 V')).toBeInTheDocument();
+    await waitFor(() => expect(measureSpy).toHaveBeenCalledWith('voltage_divider_01', ['VIN', 'VOUT'], 'r1_drift_high', 'voltage'));
+    await waitForDisplay('7.500 V');
     expect(screen.queryByText(/Fault: R1 open circuit/)).not.toBeInTheDocument();
+  });
+
+  it('switching to ohms mode re-measures in that mode and shows the multimeter reading', async () => {
+    const measureSpy = vi.spyOn(api, 'measure').mockImplementation((_deviceId, _nodes, faultId, mode) => {
+      if (mode === 'ohms') return Promise.resolve({ fault_id: faultId, mode: 'ohms', resistance_ohms: 666.667 });
+      return Promise.resolve(RESULTS[faultId]);
+    });
+    const user = userEvent.setup();
+
+    render(<SchematicProbeView deviceId="voltage_divider_01" />);
+    await screen.findByText('Simple Voltage Divider');
+    placeBothProbes();
+    await waitForDisplay('9.000 V');
+
+    await user.click(screen.getByRole('button', { name: 'Ω' }));
+
+    await waitFor(() => expect(measureSpy).toHaveBeenCalledWith('voltage_divider_01', ['VIN', 'VOUT'], 'r1_open', 'ohms'));
+    expect(await screen.findByTestId('multimeter-display')).toHaveTextContent('666.7 Ω');
   });
 });

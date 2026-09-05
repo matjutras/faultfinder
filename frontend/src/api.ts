@@ -1,4 +1,4 @@
-import type { Device, DeviceSummary, MeasureResult } from './types';
+import type { Device, DeviceSummary, DmmMode, MeasureResult } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
 
@@ -18,11 +18,12 @@ export async function measure(
   deviceId: string,
   nodes: [string, string],
   faultId: string,
+  mode: DmmMode = 'voltage',
 ): Promise<MeasureResult> {
   const resp = await fetch(`${API_BASE}/api/devices/${deviceId}/measure`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nodes, fault_id: faultId }),
+    body: JSON.stringify({ nodes, fault_id: faultId, mode }),
   });
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));

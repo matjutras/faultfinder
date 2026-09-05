@@ -1,88 +1,59 @@
 import { OrbitControls, useGLTF } from '@react-three/drei';
-import type { ThreeEvent } from '@react-three/fiber';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { useEffect, useRef, useState } from 'react';
-import type { Mesh, PerspectiveCamera } from 'three';
+import { Canvas, useThree } from '@react-three/fiber';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { deviceAssetUrl, getDevice, measure } from './api';
+import { formatDmmReading } from './dmmDisplay';
+import { resolvePcbDropTarget } from './dropTargets';
 import { FaultGuess } from './FaultGuess';
 import type { Difficulty } from './faultSelection';
 import { pickRandomFault } from './faultSelection';
-import { pcbCameraFraming, pcbHitTargetWorldRadius, pcbMmToThreeVec3 } from './kicadCoords';
-import type { Leads, ProbeTarget } from './probeSelection';
-import { EMPTY_LEADS, placeLead, selectedNodes, visibleResult } from './probeSelection';
+import { pcbCameraFraming, pcbMmToThreeVec3 } from './kicadCoords';
+import { DraggingLead, Multimeter } from './Multimeter';
+import type { MultimeterMode } from './Multimeter';
+import type { Leads, Measurement } from './probeSelection';
+import { EMPTY_LEADS, selectedNodes, setLead, visibleResult } from './probeSelection';
+import { screenToBoardMm } from './pcbRaycast';
 import './SchematicProbeView.css';
-import type { Device, MeasureResult } from './types';
-import { hitTestSegments } from './wireHitTest';
+import type { Device } from './types';
+import { useLeadDrag } from './useLeadDrag';
 
 const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard', 'random'];
-const TRACK_HIT_TOLERANCE_MM = 1; // track width is 0.25mm; generous slack for click/raycast imprecision
 
 interface Props {
   deviceId: string;
   onGuess?: (correct: boolean, firstTryThisRound: boolean) => void;
 }
 
-function PcbModel({ url, onBoardClick }: { url: string; onBoardClick: (e: ThreeEvent<MouseEvent>) => void }) {
+function PcbModel({ url }: { url: string }) {
   const { scene } = useGLTF(url);
-  return <primitive object={scene} onClick={onBoardClick} />;
+  return <primitive object={scene} />;
 }
 
-const VISIBLE_RADIUS_M = 0.0006;
-const HIT_TARGET_PX = 44; // matches the ~44x44 CSS px tap target used for the 2D schematic markers
-
-export function ProbeMarker({
-  position,
-  targetId,
-  onSelect,
-}: {
-  position: [number, number, number];
-  targetId: string;
-  onSelect: () => void;
-}) {
-  const hitMeshRef = useRef<Mesh>(null);
-  const { camera, size } = useThree();
-
-  // The invisible hit-target sphere is a unit sphere whose *scale* we keep
-  // updated every frame so it always subtends ~HIT_TARGET_PX on screen,
-  // regardless of how far OrbitControls has zoomed the camera in or out --
-  // a fixed world-space radius would only be right at one particular zoom
-  // level, which matters a lot on mobile where pinch-zoom is the norm.
-  useFrame(() => {
-    if (!hitMeshRef.current) return;
-    const dx = camera.position.x - position[0];
-    const dy = camera.position.y - position[1];
-    const dz = camera.position.z - position[2];
-    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const fovDeg = (camera as PerspectiveCamera).fov ?? 40;
-    const desiredWorldRadius = pcbHitTargetWorldRadius(distance, fovDeg, size.height, HIT_TARGET_PX);
-    hitMeshRef.current.scale.setScalar(desiredWorldRadius);
-  });
-
-  return (
-    <group position={position}>
-      <mesh
-        ref={hitMeshRef}
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelect();
-        }}
-        data-testid={`probe-marker-${targetId}`}
-      >
-        <sphereGeometry args={[1, 8, 8]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
-      <mesh raycast={() => null}>
-        <sphereGeometry args={[VISIBLE_RADIUS_M, 12, 12]} />
-        <meshStandardMaterial color="#e0a800" />
-      </mesh>
-    </group>
-  );
+export interface PcbRaycastHandle {
+  screenToWorldMm: (clientX: number, clientY: number) => { xMm: number; yMm: number } | null;
 }
 
-// A floating indicator for wherever the red/black lead actually landed --
-// unlike ProbeMarker (one per fixed pad location), a lead placed on a wire
-// or copper trace has no pre-existing marker to recolor, so this renders
-// independently at the lead's exact (x_mm, y_mm) landing point.
+// Lives inside <Canvas> (needs useThree for the real camera/renderer) and
+// exposes a plain screen-point -> board-mm conversion imperatively, so a drop
+// event handled *outside* the canvas (in the plain DOM onPointerUp from
+// useLeadDrag) can still raycast through the real camera at that point --
+// see pcbRaycast.ts for the actual (React-free, independently testable) math.
+const DropRaycaster = forwardRef<PcbRaycastHandle, { boardThicknessMm: number }>(function DropRaycaster(
+  { boardThicknessMm },
+  ref,
+) {
+  const { camera, gl } = useThree();
+  useImperativeHandle(ref, () => ({
+    screenToWorldMm(clientX, clientY) {
+      const rect = gl.domElement.getBoundingClientRect();
+      return screenToBoardMm(camera, clientX, clientY, rect, boardThicknessMm);
+    },
+  }));
+  return null;
+});
+
+// A floating indicator for wherever the red/black lead actually landed,
+// rendered independently at the lead's exact (x_mm, y_mm) landing point.
 export function LeadIndicator({
   xMm,
   yMm,
@@ -96,6 +67,7 @@ export function LeadIndicator({
   color: string;
   testId?: string;
 }) {
+  const VISIBLE_RADIUS_M = 0.0006;
   return (
     <mesh position={pcbMmToThreeVec3(xMm, yMm, boardThicknessMm)} raycast={() => null} data-testid={testId}>
       <sphereGeometry args={[VISIBLE_RADIUS_M * 1.3, 12, 12]} />
@@ -107,12 +79,14 @@ export function LeadIndicator({
 export function PcbProbeView({ deviceId, onGuess = () => {} }: Props) {
   const [device, setDevice] = useState<Device | null>(null);
   const [leads, setLeads] = useState<Leads>(EMPTY_LEADS);
+  const [mode, setMode] = useState<MultimeterMode>('voltage');
   const [difficulty, setDifficulty] = useState<Difficulty>('easy');
   const [faultId, setFaultId] = useState('healthy');
   const [round, setRound] = useState(0);
   const [revealed, setRevealed] = useState(false);
-  const [result, setResult] = useState<MeasureResult | null>(null);
+  const [measurement, setMeasurement] = useState<Measurement | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const raycastRef = useRef<PcbRaycastHandle>(null);
 
   useEffect(() => {
     getDevice(deviceId)
@@ -127,14 +101,25 @@ export function PcbProbeView({ deviceId, onGuess = () => {} }: Props) {
   const nodes = selectedNodes(leads);
 
   useEffect(() => {
-    setResult(null);
+    setMeasurement(null);
     setError(null);
     if (!nodes) return;
-    measure(deviceId, nodes, faultId)
-      .then(setResult)
+    measure(deviceId, nodes, faultId, mode)
+      .then((result) => setMeasurement({ nodes, mode, result }))
       .catch((e) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceId, nodes?.[0], nodes?.[1], faultId]);
+  }, [deviceId, nodes?.[0], nodes?.[1], faultId, mode]);
+
+  function place(color: 'red' | 'black', clientX: number, clientY: number) {
+    if (!device) return;
+    const worldMm = raycastRef.current?.screenToWorldMm(clientX, clientY);
+    if (!worldMm) return;
+    const target = resolvePcbDropTarget(worldMm.xMm, worldMm.yMm, device);
+    if (!target) return;
+    setLeads((prev) => setLead(prev, color, target));
+  }
+
+  const { drag, startDrag } = useLeadDrag(place);
 
   if (error && !device) return <p className="error">Error: {error}</p>;
   if (!device) return <p>Loading device…</p>;
@@ -143,7 +128,7 @@ export function PcbProbeView({ deviceId, onGuess = () => {} }: Props) {
   }
 
   const currentFault = device.faults.find((f) => f.id === faultId);
-  const shown = visibleResult(result, leads);
+  const shown = visibleResult(measurement, leads, mode);
   const glbUrl = deviceAssetUrl(deviceId, device.pcb_glb);
   const boardThicknessMm = device.board_thickness_mm;
   const framing = pcbCameraFraming(device.board_size_mm, boardThicknessMm);
@@ -154,40 +139,6 @@ export function PcbProbeView({ deviceId, onGuess = () => {} }: Props) {
     setFaultId(pickRandomFault(device.faults, tier).id);
     setRevealed(false);
     setRound((r) => r + 1);
-  }
-
-  function place(target: ProbeTarget) {
-    setLeads((prev) => placeLead(prev, target));
-  }
-
-  // Pad clicks are handled by each ProbeMarker's own hit-sphere (which
-  // stopPropagation()s), so this only fires for a click that missed every
-  // pad -- i.e. somewhere on the board body or a copper trace. The click's
-  // world-space intersection point converts back to board mm coordinates
-  // (inverting pcbMmToThreeVec3's X/Z mapping) and is hit-tested against the
-  // real track manifest geometry, exactly like the schematic view's wires --
-  // same "exact parsed geometry, not proximity-guessing" principle, just in
-  // 3D. A click that also misses every track (empty board area) is a no-op.
-  function handleBoardClick(e: ThreeEvent<MouseEvent>) {
-    e.stopPropagation();
-    if (!device) return;
-    const xMm = e.point.x * 1000;
-    const yMm = e.point.z * 1000;
-    const segments = device.pcb_tracks.map((t) => ({
-      x1: t.x1_mm,
-      y1: t.y1_mm,
-      x2: t.x2_mm,
-      y2: t.y2_mm,
-      node: t.node,
-    }));
-    const hit = hitTestSegments(xMm, yMm, segments, TRACK_HIT_TOLERANCE_MM);
-    if (!hit) return;
-    place({
-      targetId: `track:${hit.node}:${hit.x.toFixed(2)}:${hit.y.toFixed(2)}`,
-      node: hit.node,
-      x: hit.x,
-      y: hit.y,
-    });
   }
 
   return (
@@ -212,55 +163,55 @@ export function PcbProbeView({ deviceId, onGuess = () => {} }: Props) {
       </button>
       {revealed && currentFault && <p className="revealed-fault">Fault: {currentFault.name}</p>}
 
-      <div className="pcb-stage" style={{ width: 500, height: 400 }}>
-        <Canvas
-          camera={{ position: framing.position, near: framing.near, far: framing.far, fov: 40 }}
-        >
-          <ambientLight intensity={0.6} />
-          <directionalLight position={[framing.target[0], framing.target[1] + framing.far / 20, framing.target[2]]} intensity={1.2} />
-          <PcbModel url={glbUrl} onBoardClick={handleBoardClick} />
-          {device.pcb_pads.map((pad) => {
-            const targetId = `${pad.ref}:${pad.pin}`;
-            return (
-              <ProbeMarker
-                key={targetId}
-                targetId={targetId}
-                position={pcbMmToThreeVec3(pad.x_mm, pad.y_mm, boardThicknessMm)}
-                onSelect={() => place({ targetId, node: pad.node, x: pad.x_mm, y: pad.y_mm })}
+      <div className="probe-workspace">
+        <div className="pcb-stage" style={{ width: 500, height: 400 }}>
+          <Canvas camera={{ position: framing.position, near: framing.near, far: framing.far, fov: 40 }}>
+            <ambientLight intensity={0.6} />
+            <directionalLight
+              position={[framing.target[0], framing.target[1] + framing.far / 20, framing.target[2]]}
+              intensity={1.2}
+            />
+            <PcbModel url={glbUrl} />
+            <DropRaycaster ref={raycastRef} boardThicknessMm={boardThicknessMm} />
+            {leads.red && (
+              <LeadIndicator
+                xMm={leads.red.x}
+                yMm={leads.red.y}
+                boardThicknessMm={boardThicknessMm}
+                color="#c0392b"
+                testId="lead-red"
               />
-            );
-          })}
-          {leads.red && (
-            <LeadIndicator
-              xMm={leads.red.x}
-              yMm={leads.red.y}
-              boardThicknessMm={boardThicknessMm}
-              color="#c0392b"
-              testId="lead-red"
-            />
-          )}
-          {leads.black && (
-            <LeadIndicator
-              xMm={leads.black.x}
-              yMm={leads.black.y}
-              boardThicknessMm={boardThicknessMm}
-              color="#1a1a1a"
-              testId="lead-black"
-            />
-          )}
-          <OrbitControls target={framing.target} minPolarAngle={0.15} maxPolarAngle={1.45} />
-        </Canvas>
+            )}
+            {leads.black && (
+              <LeadIndicator
+                xMm={leads.black.x}
+                yMm={leads.black.y}
+                boardThicknessMm={boardThicknessMm}
+                color="#1a1a1a"
+                testId="lead-black"
+              />
+            )}
+            <OrbitControls target={framing.target} minPolarAngle={0.15} maxPolarAngle={1.45} zoomToCursor />
+          </Canvas>
+        </div>
+        <Multimeter
+          mode={mode}
+          onModeChange={setMode}
+          display={formatDmmReading(mode, shown)}
+          redPlaced={leads.red !== null}
+          blackPlaced={leads.black !== null}
+          onLeadPointerDown={(color, e) => startDrag(color, e.clientX, e.clientY)}
+        />
       </div>
+      {drag && <DraggingLead color={drag.color} clientX={drag.clientX} clientY={drag.clientY} />}
 
-      <p className="hint">
-        Drag to orbit. Click a pad, or anywhere along a copper trace, to place the red lead, then the black lead.
-      </p>
+      <p className="hint">Drag to orbit the board. Drag a lead from the multimeter onto a pad or copper trace.</p>
 
       {error && <p className="error">Error: {error}</p>}
 
-      {shown && nodes && (
+      {shown && mode === 'voltage' && nodes && shown.probes && (
         <div className="readout">
-          <span className="value">{shown.differential_volts.toFixed(3)} V</span>
+          <span className="value">{(shown.differential_volts ?? 0).toFixed(3)} V</span>
           <span className="probes">
             {nodes[0]} ({shown.probes.find((p) => p.node === nodes[0])!.volts.toFixed(3)} V) &rarr; {nodes[1]} (
             {shown.probes.find((p) => p.node === nodes[1])!.volts.toFixed(3)} V)

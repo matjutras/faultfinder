@@ -27,8 +27,8 @@ export function schematicMmToPixels(
 // against a real export, not assumed -- see CLAUDE.md's PCB view gotcha about
 // the Y-down/Y-up mismatch: that warning is about raw pcbnew pad coordinates
 // (KiCad-internal, Y-down), not about this already-flipped glb output.
-const MM_PER_M = 1000;
-const HIT_TARGET_HEIGHT_M = 0.001; // sits just above the copper/silkscreen top
+export const MM_PER_M = 1000;
+export const HIT_TARGET_HEIGHT_M = 0.001; // sits just above the copper/silkscreen top
 
 export function pcbMmToThreeVec3(
   xMm: number,
@@ -73,21 +73,4 @@ export function pcbCameraFraming(
   ];
 
   return { target, position, near: diagonal / 100, far: diagonal * 20 };
-}
-
-// The world-space radius an invisible probe hit-target sphere needs so it
-// subtends `desiredScreenPx` pixels on screen at the given camera distance --
-// a fixed world-space radius would only be the right size at one particular
-// OrbitControls zoom level, which matters a lot on mobile where pinch-zoom
-// is the norm. Standard perspective-projection inverse: world-units-per-pixel
-// at a given distance is (2 * tan(halfFov) * distance) / canvasHeightPx.
-export function pcbHitTargetWorldRadius(
-  distanceM: number,
-  verticalFovDeg: number,
-  canvasHeightPx: number,
-  desiredScreenPx: number,
-): number {
-  const verticalFovRad = (verticalFovDeg * Math.PI) / 180;
-  const worldUnitsPerPixel = (2 * Math.tan(verticalFovRad / 2) * distanceM) / canvasHeightPx;
-  return (desiredScreenPx / 2) * worldUnitsPerPixel;
 }

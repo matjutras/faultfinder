@@ -69,7 +69,9 @@ def test_build_pcb_manifest_has_a_pad_for_every_component_pin_not_just_tp(tmp_pa
     probe point now, not just TP-ref pads."""
     manifest = _run_build_pcb("voltage_divider_01", tmp_path)
     refs = {p["ref"] for p in manifest["pads"]}
-    assert refs == {"R1", "R2", "TP1", "TP2", "TP3"}  # V1 excluded -- see the SPICE-only test below
+    # V1 excluded (SPICE-only, see the test below); J1 is the synthesized
+    # real power-input connector, not a schematic component.
+    assert refs == {"R1", "R2", "TP1", "TP2", "TP3", "J1"}
     r1_pins = {p["pin"] for p in manifest["pads"] if p["ref"] == "R1"}
     assert r1_pins == {"1", "2"}
 
@@ -142,3 +144,35 @@ def test_build_pcb_skips_spice_only_simulation_symbols(tmp_path):
     # V1 is a Simulation_SPICE VDC source, not a real PCB part -- must not
     # produce a pad entry.
     assert not any(p["ref"] == "V1" for p in manifest["pads"])
+
+
+@requires_kicad
+@requires_pcbnew
+@pytest.mark.parametrize("device_id,power_net", [
+    ("voltage_divider_01", "VIN"),
+    ("resistor_ladder_02", "VIN"),
+    ("diode_indicator_03", "VIN"),
+    ("transistor_switch_04", "VCC"),  # different per-device label -- must not be hardcoded
+    ("resistor_bridge_05", "VIN"),
+])
+def test_build_pcb_adds_a_real_power_connector_wired_to_vin_and_gnd(device_id, power_net, tmp_path):
+    """V1 (the SPICE-only source) has no footprint, so without a real
+    connector the board has no physical place power enters -- just passives
+    and probe test points. J1's two pads must land on the actual VIN/VCC and
+    GND nets (derived generically from whatever net V1 ties to, not from a
+    hardcoded net name), and be part of the real routed copper, not just
+    dropped on the board unconnected."""
+    manifest = _run_build_pcb(device_id, tmp_path)
+
+    j1_pads = {p["pin"]: p for p in manifest["pads"] if p["ref"] == "J1"}
+    assert set(j1_pads) == {"1", "2"}
+    nodes = {p["node"] for p in j1_pads.values()}
+    assert nodes == {power_net, "0"}
+
+    for pad in j1_pads.values():
+        assert 0 <= pad["x_mm"] <= manifest["board_size_mm"]["width"]
+        assert 0 <= pad["y_mm"] <= manifest["board_size_mm"]["height"]
+
+    routed_nodes = {t["node"] for t in manifest["tracks"]}
+    assert power_net in routed_nodes
+    assert "0" in routed_nodes

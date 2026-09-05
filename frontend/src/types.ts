@@ -59,8 +59,16 @@ export interface Device {
   pcb_glb?: string;
 }
 
+export type DmmMode = 'voltage' | 'ohms' | 'diode';
+
 export interface MeasureResult {
   fault_id: string;
-  probes: { node: string; volts: number }[];
-  differential_volts: number;
+  mode: DmmMode;
+  // voltage mode only:
+  probes?: { node: string; volts: number }[];
+  differential_volts?: number;
+  // ohms mode only; null means open ("0L"):
+  resistance_ohms?: number | null;
+  // diode mode only; null means open ("0L"):
+  diode_forward_volts?: number | null;
 }

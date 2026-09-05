@@ -56,6 +56,9 @@ DEFAULT_FOOTPRINT: dict[str, tuple[str, str]] = {
 
 GRID_PITCH_MM = 12
 MARGIN_MM = 6
+POWER_CONNECTOR_REF = "J1"
+POWER_CONNECTOR_FOOTPRINT = ("Connector_PinHeader_2.54mm.pretty", "PinHeader_1x02_P2.54mm_Vertical")
+POWER_CONNECTOR_PINS = {"1": "power", "2": "ground"}  # pad number -> role, both wired below
 BOARD_THICKNESS_MM = 1.51  # KiCad's default stackup total; fixed since we never customize it
 TRACK_WIDTH_MM = 0.25
 VIA_WIDTH_MM = 0.6
@@ -249,6 +252,54 @@ def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
                     "x_mm": pos.x / 1_000_000, "y_mm": pos.y / 1_000_000,
                 })
 
+    n_placed = len(placeable)
+    connector_added = False
+
+    # A real physical power-input connector for VIN/VCC + GND -- V1 (the
+    # SPICE-only source, see SKIP_LIBS) has no footprint, so without this the
+    # board has no physical place power actually enters, only passives and
+    # probe test points. The positive net is derived generically -- whichever
+    # net a Simulation_SPICE component ties to besides "0" -- not by
+    # hardcoding "VIN" vs "VCC" (that varies per device).
+    spice_power_nets = sorted({
+        net for (ref, _pin), net in net_by_pin.items()
+        if comps.get(ref, {}).get("lib") in SKIP_LIBS and net != "0"
+    })
+    power_net = spice_power_nets[0] if spice_power_nets else None
+
+    if power_net is not None and power_net in net_items and "0" in net_items:
+        lib_folder, fp_name = POWER_CONNECTOR_FOOTPRINT
+        fp = pcbnew.FootprintLoad(str(FP_LIB_DIR / lib_folder), fp_name)
+        if fp is None:
+            raise PcbGenError(f"footprint not found: {lib_folder}:{fp_name} (for {POWER_CONNECTOR_REF})")
+        fp.SetReference(POWER_CONNECTOR_REF)
+        # Offset half a grid cell off the raster the schematic-derived
+        # components sit on -- landing exactly on their shared grid lines is
+        # what turned a routing conflict into a real short in
+        # resistor_bridge_05 (verified: J1 on-grid at (30,30) forced its GND
+        # connection through (30,6), a point another net's pad already sat
+        # on). This is a generic collision-avoidance nudge, not a fix tuned
+        # to that one device.
+        x_mm = MARGIN_MM + (n_placed % cols) * GRID_PITCH_MM + GRID_PITCH_MM / 2
+        y_mm = MARGIN_MM + (n_placed // cols) * GRID_PITCH_MM + GRID_PITCH_MM / 2
+        fp.SetPosition(pcbnew.VECTOR2I(_mm(x_mm), _mm(y_mm)))
+        board.Add(fp)
+
+        pin_nets = {pin: (power_net if role == "power" else "0") for pin, role in POWER_CONNECTOR_PINS.items()}
+        for pad in fp.Pads():
+            net_name = pin_nets.get(pad.GetNumber())
+            if net_name is None:
+                continue
+            pad.SetNet(net_items[net_name])
+            pads_by_net.setdefault(net_name, []).append(pad)
+            pos = pad.GetPosition()
+            all_pads.append({
+                "ref": POWER_CONNECTOR_REF, "pin": pad.GetNumber(), "node": net_name,
+                "x_mm": pos.x / 1_000_000, "y_mm": pos.y / 1_000_000,
+            })
+        n_placed += 1
+        connector_added = True
+
     # Orthogonal copper between same-net pads, so the board reads as one
     # connected circuit instead of floating unconnected parts -- with real
     # crossing detection (see module docstring): a segment that would overlap
@@ -339,11 +390,12 @@ def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
             for p1, p2 in zip(path, path[1:]):
                 _place_segment(p1, p2, net_name, net_item)
 
-    rows = max(1, -(-len(placeable) // cols))
+    rows = max(1, -(-n_placed // cols))
     # components span [MARGIN, MARGIN + (n-1)*PITCH] on each axis, so a board
     # from (0,0) to this size gives MARGIN clearance on every edge.
-    board_width_mm = 2 * MARGIN_MM + (cols - 1) * GRID_PITCH_MM
-    board_height_mm = 2 * MARGIN_MM + (rows - 1) * GRID_PITCH_MM
+    extra_mm = GRID_PITCH_MM / 2 if connector_added else 0
+    board_width_mm = 2 * MARGIN_MM + (cols - 1) * GRID_PITCH_MM + extra_mm
+    board_height_mm = 2 * MARGIN_MM + (rows - 1) * GRID_PITCH_MM + extra_mm
 
     outline = pcbnew.PCB_SHAPE(board, pcbnew.SHAPE_T_RECT)
     outline.SetLayer(pcbnew.Edge_Cuts)

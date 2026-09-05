@@ -1,13 +1,10 @@
-import type { MeasureResult } from './types';
+import type { DmmMode, MeasureResult } from './types';
 
-// A clickable target the user probed -- a pin, a pad, or a point along a
-// wire/track. `targetId` is stable for discrete pins/pads (so re-clicking the
-// same one removes it), but effectively unique per click for a continuous
-// wire/track point (there's no natural stable id for "the same spot on a
-// wire" across renders) -- so toggle-off by re-click only works for discrete
-// pins/pads, not wire points. `node` is the real SPICE node it resolves to,
-// used for the actual /measure call; `x`/`y` are just the click position, for
-// rendering the lead marker at the exact spot the user probed.
+// Where a dragged lead landed -- a pin, a pad, or a point along a wire/track
+// (see dropTargets.ts). `targetId` identifies what it resolved to; `node` is
+// the real SPICE node it resolves to, used for the actual /measure call;
+// `x`/`y` are the landing position, for rendering the lead marker at the
+// exact spot the probe landed.
 export interface ProbeTarget {
   targetId: string;
   node: string;
@@ -22,21 +19,14 @@ export interface Leads {
 
 export const EMPTY_LEADS: Leads = { red: null, black: null };
 
-// Click semantics: place into whichever lead is empty first (red, then
-// black); re-clicking a lead's own target removes it; a third click once
-// both are placed slides the window -- red is dropped, black becomes the new
-// red, and the new click becomes black -- same sliding-window behavior as
-// the original two-test-point picker.
-export function placeLead(leads: Leads, target: ProbeTarget): Leads {
-  if (leads.red && leads.red.targetId === target.targetId) {
-    return { red: null, black: leads.black };
-  }
-  if (leads.black && leads.black.targetId === target.targetId) {
-    return { red: leads.red, black: null };
-  }
-  if (!leads.red) return { red: target, black: leads.black };
-  if (!leads.black) return { red: leads.red, black: target };
-  return { red: leads.black, black: target };
+export type LeadColor = 'red' | 'black';
+
+// Drag-and-drop semantics: each lead is independently draggable from the
+// multimeter graphic (see Multimeter.tsx/useLeadDrag.ts), so placing one
+// simply (re)assigns that lead's own target -- there's no shared "window" to
+// slide, unlike the old click-to-cycle picker this replaced.
+export function setLead(leads: Leads, color: LeadColor, target: ProbeTarget): Leads {
+  return color === 'red' ? { ...leads, red: target } : { ...leads, black: target };
 }
 
 export function selectedNodes(leads: Leads): [string, string] | null {
@@ -44,15 +34,26 @@ export function selectedNodes(leads: Leads): [string, string] | null {
   return [leads.red.node, leads.black.node];
 }
 
-// A fetched `result` and the current `leads` can briefly disagree: placing a
-// third probe slides the lead window in the same render pass where `result`
-// still holds the previous pair's measurement, one tick before the effect
-// that re-measures it clears it out. Rendering that stale result against the
-// new leads would read a node that isn't in it -- so callers must render
-// through this instead of `result` directly.
-export function visibleResult(result: MeasureResult | null, leads: Leads): MeasureResult | null {
+// A fetched result tagged with exactly what it was fetched for -- since
+// ohms/diode results (unlike voltage's `probes`) carry nothing that
+// self-identifies which nodes produced them, the nodes/mode have to be
+// tracked alongside the result instead of inferred from its contents.
+export interface Measurement {
+  nodes: [string, string];
+  mode: DmmMode;
+  result: MeasureResult;
+}
+
+// A fetched `measurement` and the current `leads`/`mode` can briefly
+// disagree: re-dragging one lead to a new target (or switching mode) updates
+// state in the same render pass where `measurement` still holds the previous
+// pair's reading, one tick before the effect that re-measures it clears it
+// out. Rendering that stale measurement would show a reading for the wrong
+// probes/mode -- so callers must render through this instead of the fetched
+// result directly.
+export function visibleResult(measurement: Measurement | null, leads: Leads, mode: DmmMode): MeasureResult | null {
   const nodes = selectedNodes(leads);
-  if (!result || !nodes) return null;
-  const resultNodes = new Set(result.probes.map((p) => p.node));
-  return nodes.every((n) => resultNodes.has(n)) ? result : null;
+  if (!measurement || !nodes) return null;
+  if (measurement.mode !== mode) return null;
+  return measurement.nodes[0] === nodes[0] && measurement.nodes[1] === nodes[1] ? measurement.result : null;
 }

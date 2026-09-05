@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import devices, fault_gen, kicad_import, netlist, pcb_import, spice_runner
+from . import devices, dmm, fault_gen, kicad_import, netlist, pcb_import, spice_runner
 
 HEALTHY_FAULT = {"id": "healthy", "name": "No fault", "difficulty": "n/a", "patch": []}
 
@@ -30,6 +30,7 @@ app.mount("/static/devices", StaticFiles(directory=devices.DEVICES_ROOT), name="
 class MeasureRequest(BaseModel):
     nodes: list[str]  # exactly 2 SPICE node names -- whatever pin/pad/wire/track point the user probed
     fault_id: str = "healthy"
+    mode: str = "voltage"  # "voltage" | "ohms" | "diode" -- see app/dmm.py for ohms/diode
 
 
 @app.get("/api/devices")
@@ -105,22 +106,39 @@ def measure(device_id: str, req: MeasureRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    if req.mode not in ("voltage", "ohms", "diode"):
+        raise HTTPException(status_code=400, detail=f"unknown mode {req.mode!r}")
+
     patch = fault["patch"]
     if fault.get("intermittent") and random.random() < 0.5:
         patch = []  # a "miss": the connection happens to be fine this time
     patched = netlist.apply_patch(circuit, patch)
+    node_a, node_b = req.nodes
+
+    if req.mode == "ohms":
+        return {
+            "fault_id": fault["id"],
+            "mode": "ohms",
+            "resistance_ohms": dmm.measure_resistance_ohms(patched, node_a, node_b),
+        }
+    if req.mode == "diode":
+        return {
+            "fault_id": fault["id"],
+            "mode": "diode",
+            "diode_forward_volts": dmm.measure_diode_forward_volts(patched, node_a, node_b),
+        }
 
     try:
         node_voltages = spice_runner.simulate(patched)
     except spice_runner.NgspiceError as e:
         raise HTTPException(status_code=502, detail=f"ngspice failed: {e}")
 
-    node_a, node_b = req.nodes
     v_a = node_voltages.get(node_a.upper(), 0.0)
     v_b = node_voltages.get(node_b.upper(), 0.0)
 
     return {
         "fault_id": fault["id"],
+        "mode": "voltage",
         "probes": [{"node": node_a, "volts": v_a}, {"node": node_b, "volts": v_b}],
         "differential_volts": v_a - v_b,
     }

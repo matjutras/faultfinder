@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 import * as api from './api';
+import { dragLeadTo } from './test/dragLead';
 
 const DEVICE = {
   id: 'voltage_divider_01',
@@ -93,6 +94,7 @@ describe('App', () => {
     );
     vi.spyOn(api, 'measure').mockResolvedValue({
       fault_id: 'healthy',
+      mode: 'voltage',
       probes: [
         { node: 'VIN', volts: 9 },
         { node: 'VOUT', volts: 6 },
@@ -104,14 +106,16 @@ describe('App', () => {
     render(<App />);
     await screen.findByRole('heading', { name: 'Simple Voltage Divider' });
 
-    await user.click(screen.getByTestId('pin-TP1-1'));
-    await user.click(screen.getByTestId('pin-TP2-1'));
-    expect(await screen.findByText('3.000 V')).toBeInTheDocument();
+    // TP1 (101.6, 81.28mm) and TP2 (101.6, 111.76mm) against the 800x880px
+    // stage (8px/mm, jsdom's zero-offset default rect).
+    dragLeadTo('red', 101.6 * 8, 81.28 * 8);
+    dragLeadTo('black', 101.6 * 8, 111.76 * 8);
+    expect(await screen.findByTestId('multimeter-display')).toHaveTextContent('3.000 V');
 
     await user.selectOptions(screen.getByLabelText('Device:'), OTHER_DEVICE.id);
     await screen.findByRole('heading', { name: 'Resistor Bridge' });
 
-    expect(screen.queryByText('3.000 V')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('multimeter-display')).toHaveTextContent('— —');
     expect(screen.queryByTestId('lead-red')).not.toBeInTheDocument();
     expect(screen.queryByTestId('lead-black')).not.toBeInTheDocument();
   });

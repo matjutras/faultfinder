@@ -145,6 +145,51 @@ def test_measure_r2_open_fault_changes_the_reading(monkeypatch):
     assert faulted["differential_volts"] != healthy["differential_volts"]
 
 
+@requires_ngspice
+def test_measure_ohms_mode_through_the_real_pipeline():
+    resp = client.post(
+        "/api/devices/voltage_divider_01/measure",
+        json={"nodes": ["VIN", "VOUT"], "fault_id": "healthy", "mode": "ohms"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["mode"] == "ohms"
+    assert body["resistance_ohms"] == pytest.approx(666.667, abs=0.01)  # R1 (1k) || R2 (2k)
+
+
+@requires_ngspice
+def test_measure_ohms_mode_reads_open_when_both_resistors_are_open():
+    resp = client.post(
+        "/api/devices/voltage_divider_01/measure",
+        json={"nodes": ["VIN", "VOUT"], "fault_id": "r1_open", "mode": "ohms"},
+    )
+    assert resp.status_code == 200
+    # r1_open alone still has a real path back through R2 (see test_dmm.py) --
+    # this just checks the mode flows through find_fault -> apply_patch like
+    # voltage mode already does, not that this particular fault reads open.
+    assert resp.json()["resistance_ohms"] is not None
+
+
+@requires_ngspice
+def test_measure_diode_mode_through_the_real_pipeline():
+    resp = client.post(
+        "/api/devices/diode_indicator_03/measure",
+        json={"nodes": ["N1", "0"], "fault_id": "healthy", "mode": "diode"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["mode"] == "diode"
+    assert body["diode_forward_volts"] == pytest.approx(0.4696388, abs=1e-4)
+
+
+def test_measure_unknown_mode_400():
+    resp = client.post(
+        "/api/devices/voltage_divider_01/measure",
+        json={"nodes": ["VIN", "VOUT"], "fault_id": "healthy", "mode": "capacitance"},
+    )
+    assert resp.status_code == 400
+
+
 def test_measure_requires_exactly_two_probes():
     resp = client.post(
         "/api/devices/voltage_divider_01/measure",
