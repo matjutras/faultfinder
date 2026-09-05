@@ -19,8 +19,8 @@ def test_import_testpoints_resolves_real_nets_and_placements():
     assert by_ref["TP3"]["node"] == "0"
 
     # x/y come from the schematic's own symbol placement, not hand-typed guesses.
-    assert by_ref["TP1"]["x_mm"] == pytest.approx(101.6)
-    assert by_ref["TP1"]["y_mm"] == pytest.approx(81.28)
+    assert by_ref["TP1"]["x_mm"] == pytest.approx(50.8)
+    assert by_ref["TP1"]["y_mm"] == pytest.approx(39.37)
 
 
 def test_resolve_testpoint_nets_strips_sheet_path_and_maps_gnd_to_zero():

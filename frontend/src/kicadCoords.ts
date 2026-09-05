@@ -1,9 +1,13 @@
-// KiCad's `(paper "A4")` with no `(portrait)` modifier renders landscape
-// (297mm wide x 210mm tall) -- confirmed against a real KiCanvas render, not
-// assumed. `controls="none"` fits the whole page into its container
-// (letterboxed, centered), so this is a plain "object-fit: contain" transform.
-const PAGE_WIDTH_MM = 297;
-const PAGE_HEIGHT_MM = 210;
+// Every device's .kicad_sch declares a custom `(paper "User" 100 110)` sheet
+// (100mm x 110mm) instead of A4 -- a full A4 page around a 3-5 component
+// teaching circuit left the actual symbols tiny relative to the fixed-size
+// TP marker overlay; a page sized to the content makes the same symbols
+// occupy far more of the rendered viewport. Confirmed against a real
+// KiCanvas render, not assumed. `controls="none"` fits the whole page into
+// its container (letterboxed, centered), so this is a plain "object-fit:
+// contain" transform -- must match every device's own paper size exactly.
+const PAGE_WIDTH_MM = 100;
+const PAGE_HEIGHT_MM = 110;
 
 export function schematicMmToPixels(
   xMm: number,
