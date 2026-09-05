@@ -5,6 +5,20 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>frontend</title>
+    <script>
+      // KiCanvas defaults to a dark "witchhazel" theme; the light "kicad"
+      // theme (KiCad's own off-white schematic look) is only ever applied
+      // through this exact localStorage key, read synchronously the moment
+      // kicanvas.js's module evaluates (confirmed by reading the vendored
+      // bundle -- its <kicanvas-embed> element declares a `theme` attribute
+      // that is never actually used). A plain, non-module script runs before
+      // any deferred `type="module"` script regardless of tag order, so this
+      // has to land before kicanvas.js loads. Guarded so a real in-app theme
+      // toggle, if one's ever added, isn't stomped on every reload.
+      if (!localStorage.getItem('kc:prefs:theme')) {
+        localStorage.setItem('kc:prefs:theme', JSON.stringify({ val: 'kicad' }));
+      }
+    </script>
     <script type="module" src="/kicanvas.js"></script>
   </head>
   <body>
