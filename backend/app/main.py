@@ -31,6 +31,11 @@ class MeasureRequest(BaseModel):
     fault_id: str = "healthy"
 
 
+@app.get("/api/devices")
+def list_devices():
+    return devices.list_devices()
+
+
 @app.get("/api/devices/{device_id}")
 def get_device(device_id: str):
     try:

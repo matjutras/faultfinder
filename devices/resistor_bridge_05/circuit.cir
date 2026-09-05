@@ -1,0 +1,7 @@
+* Resistor Bridge - FaultFinder device resistor_bridge_05
+V1 VIN 0 DC 9
+R1 VIN A 1k
+R2 A 0 1k
+R3 VIN B 2k
+R4 B 0 1k
+.end

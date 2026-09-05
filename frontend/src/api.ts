@@ -1,6 +1,12 @@
-import type { Device, MeasureResult } from './types';
+import type { Device, DeviceSummary, MeasureResult } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
+
+export async function listDevices(): Promise<DeviceSummary[]> {
+  const resp = await fetch(`${API_BASE}/api/devices`);
+  if (!resp.ok) throw new Error(`failed to list devices: ${resp.status}`);
+  return resp.json();
+}
 
 export async function getDevice(deviceId: string): Promise<Device> {
   const resp = await fetch(`${API_BASE}/api/devices/${deviceId}`);

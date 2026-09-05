@@ -42,8 +42,10 @@ def _run_build_pcb(device_id: str, tmp_path: Path) -> dict:
     ("voltage_divider_01", ["TP1", "TP2", "TP3"]),
     ("resistor_ladder_02", ["TP1", "TP2", "TP3", "TP4"]),
     ("diode_indicator_03", ["TP1", "TP2", "TP3"]),
+    ("transistor_switch_04", ["TP1", "TP2", "TP3", "TP4"]),
+    ("resistor_bridge_05", ["TP1", "TP2", "TP3", "TP4"]),
 ])
-def test_build_pcb_places_every_testpoint_for_all_three_devices(device_id, tp_ids, tmp_path):
+def test_build_pcb_places_every_testpoint_for_all_devices(device_id, tp_ids, tmp_path):
     """The generalization check for the PCB pipeline, mirroring milestone 4's
     schematic-side one: this must work for every device through the same
     script, with zero device-specific code."""

@@ -20,6 +20,19 @@ def load_device(device_id: str) -> dict:
     return json.loads((device_dir(device_id) / "device.json").read_text())
 
 
+def list_devices() -> list[dict]:
+    """All devices with a device.json, discovered generically from the
+    devices/ directory listing -- never a hardcoded device-id list, so a
+    newly added device shows up with zero app-code changes."""
+    devices = []
+    for d in sorted(DEVICES_ROOT.iterdir()):
+        device_json = d / "device.json"
+        if d.is_dir() and device_json.is_file():
+            info = json.loads(device_json.read_text())
+            devices.append({"id": info["id"], "name": info["name"]})
+    return devices
+
+
 def load_map(device_id: str) -> dict:
     return json.loads((device_dir(device_id) / "map.json").read_text())
 

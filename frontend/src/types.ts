@@ -17,6 +17,11 @@ export interface Fault {
   patch: Record<string, unknown>[];
 }
 
+export interface DeviceSummary {
+  id: string;
+  name: string;
+}
+
 export interface Device {
   id: string;
   name: string;

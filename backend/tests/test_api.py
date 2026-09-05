@@ -77,6 +77,14 @@ def test_import_unknown_device_404():
     assert resp.status_code == 404
 
 
+def test_list_devices_includes_every_device_directory():
+    resp = client.get("/api/devices")
+    assert resp.status_code == 200
+    ids = {d["id"] for d in resp.json()}
+    assert {"voltage_divider_01", "resistor_ladder_02", "diode_indicator_03",
+            "transistor_switch_04", "resistor_bridge_05"} <= ids
+
+
 def test_get_device_returns_testpoints_and_faults():
     resp = client.get("/api/devices/voltage_divider_01")
     assert resp.status_code == 200

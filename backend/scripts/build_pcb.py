@@ -43,6 +43,7 @@ DEFAULT_FOOTPRINT: dict[str, tuple[str, str]] = {
     "D": ("Diode_SMD.pretty", "D_SOD-123"),
     "LED": ("LED_SMD.pretty", "LED_0805_2012Metric"),
     "TestPoint": ("TestPoint.pretty", "TestPoint_Pad_D1.5mm"),
+    "Q_NPN": ("Package_TO_SOT_SMD.pretty", "SOT-23"),
 }
 
 GRID_PITCH_MM = 12
