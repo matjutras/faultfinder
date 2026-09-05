@@ -11,10 +11,13 @@ const DEVICE = {
   pcb_glb: 'pcb.glb',
   board_size_mm: { width: 36, height: 24 },
   board_thickness_mm: 1.51,
-  testpoints: [
-    { tp_id: 'TP1', label: 'Input (VIN)', node: 'VIN', x_mm: 101.6, y_mm: 81.28 },
-    { tp_id: 'TP2', label: 'Output (VOUT)', node: 'VOUT', x_mm: 101.6, y_mm: 111.76 },
+  pins: [
+    { ref: 'TP1', pin: '1', node: 'VIN', x_mm: 101.6, y_mm: 81.28 },
+    { ref: 'TP2', pin: '1', node: 'VOUT', x_mm: 101.6, y_mm: 111.76 },
   ],
+  wires: [],
+  pcb_pads: [],
+  pcb_tracks: [],
   faults: [
     { id: 'healthy', name: 'No fault', difficulty: 'n/a', patch: [] },
     { id: 'r1_open', name: 'R1 open circuit', difficulty: 'easy', patch: [] },
@@ -90,7 +93,10 @@ describe('App', () => {
     );
     vi.spyOn(api, 'measure').mockResolvedValue({
       fault_id: 'healthy',
-      probes: { TP1: 9, TP2: 6 },
+      probes: [
+        { node: 'VIN', volts: 9 },
+        { node: 'VOUT', volts: 6 },
+      ],
       differential_volts: 3,
     });
     const user = userEvent.setup();
@@ -98,16 +104,16 @@ describe('App', () => {
     render(<App />);
     await screen.findByRole('heading', { name: 'Simple Voltage Divider' });
 
-    await user.click(screen.getByTitle('Input (VIN)'));
-    await user.click(screen.getByTitle('Output (VOUT)'));
+    await user.click(screen.getByTestId('pin-TP1-1'));
+    await user.click(screen.getByTestId('pin-TP2-1'));
     expect(await screen.findByText('3.000 V')).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Device:'), OTHER_DEVICE.id);
     await screen.findByRole('heading', { name: 'Resistor Bridge' });
 
     expect(screen.queryByText('3.000 V')).not.toBeInTheDocument();
-    expect(screen.getByTitle('Input (VIN)')).not.toHaveClass('selected');
-    expect(screen.getByTitle('Output (VOUT)')).not.toHaveClass('selected');
+    expect(screen.queryByTestId('lead-red')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('lead-black')).not.toBeInTheDocument();
   });
 
   it('keeps the session score across a device switch, unlike the per-device probe state', async () => {

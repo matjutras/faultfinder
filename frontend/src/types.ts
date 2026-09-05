@@ -1,11 +1,34 @@
-export interface TestPoint {
-  tp_id: string;
-  label: string;
+export interface Pin {
+  ref: string;
+  pin: string;
   node: string;
   x_mm: number;
   y_mm: number;
-  pcb_x_mm?: number;
-  pcb_y_mm?: number;
+}
+
+export interface Wire {
+  node: string;
+  x1_mm: number;
+  y1_mm: number;
+  x2_mm: number;
+  y2_mm: number;
+}
+
+export interface PcbPad {
+  ref: string;
+  pin: string;
+  node: string;
+  x_mm: number;
+  y_mm: number;
+}
+
+export interface PcbTrack {
+  node: string;
+  layer: string;
+  x1_mm: number;
+  y1_mm: number;
+  x2_mm: number;
+  y2_mm: number;
 }
 
 export interface Fault {
@@ -26,7 +49,10 @@ export interface Device {
   id: string;
   name: string;
   schematic_sch: string;
-  testpoints: TestPoint[];
+  pins: Pin[];
+  wires: Wire[];
+  pcb_pads: PcbPad[];
+  pcb_tracks: PcbTrack[];
   faults: Fault[];
   board_size_mm?: { width: number; height: number };
   board_thickness_mm?: number;
@@ -35,6 +61,6 @@ export interface Device {
 
 export interface MeasureResult {
   fault_id: string;
-  probes: Record<string, number>;
+  probes: { node: string; volts: number }[];
   differential_volts: number;
 }

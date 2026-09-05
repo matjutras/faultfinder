@@ -6,8 +6,8 @@ Educational electronics trainer: auto-generated schematics and 3D PCB views wher
 
 - **Frontend:** React + Vite + TypeScript, deployed as a PWA. 3D board view via `@react-three/fiber` + `@react-three/drei` (three.js).
 - **Backend:** Python. Shells out directly to `ngspice` (no PySpice) and to `kicad-cli` for the import pipeline — do not add a SPICE-wrapper dependency. Web framework not yet locked in; FastAPI is the default assumption until Mat says otherwise — update this line once decided.
-- **Schematic view:** KiCanvas renders `.kicad_sch` client-side. Pin/net coordinates for click targets come from parsing the KiCad XML netlist (`kicad-cli sch export netlist --format kicadxml`), **not** from geometry/label-proximity guessing — that approach was tried and produced real mismapped test points on a first pass. Don't reintroduce it.
-- **PCB view:** `kicad-cli pcb export glb` (KiCad 9+, native, includes populated component models) loaded via `@react-three/fiber`. Probe hit-testing uses invisible hit-target meshes placed at pad X/Y from `.kicad_pcb`, picked with a three.js `Raycaster`. Watch the Y-flip between PCB coordinates (Y-down) and glTF/three.js (Y-up).
+- **Schematic view:** KiCanvas renders `.kicad_sch` client-side. Every component pin and every wire segment is a click target (milestone 8: probe anywhere, not just TP markers) — coordinates come from parsing the KiCad XML netlist (`kicad-cli sch export netlist --format kicadxml`) plus the `.kicad_sch` source itself (wire endpoints, symbol pin offsets), **not** from geometry/label-proximity guessing — that approach was tried early on and produced real mismapped test points. Don't reintroduce it. A click on a wire hit-strip snaps to the nearest point *on* the wire (`wireHitTest.ts`), not the raw click pixel.
+- **PCB view:** `kicad-cli pcb export glb` (KiCad 9+, native, includes populated component models) loaded via `@react-three/fiber`. Every pad is an invisible hit-target mesh picked with a three.js `Raycaster`; a click that misses every pad raycasts against the board mesh itself and the resulting world point is hit-tested against the real copper-track manifest (`wireHitTest.ts`, shared with the schematic view's wire hit-testing) to land on a trace. Watch the Y-flip between PCB coordinates (Y-down) and glTF/three.js (Y-up).
 - **Simulation:** `ngspice -b netlist.cir` as a subprocess, server-side, for v1. Client-side WASM ngspice (EEcircuit-style) is a deliberate later upgrade, not a v1 goal — don't build both at once.
 
 ## Per-device file convention
@@ -17,13 +17,13 @@ Generated once per device by the importer (a backend API route, not a distribute
 ```
 devices/<device_id>/
   device.json     # {id, name, schematic_image}
-  map.json        # {id, testpoints: [{tp_id, label, node, x, y}, ...]}
+  map.json        # {id, pins: [{ref, pin, node, x_mm, y_mm}, ...], wires: [{node, x1_mm, y1_mm, x2_mm, y2_mm}, ...], pcb_pads: [...], pcb_tracks: [{node, layer, x1_mm, y1_mm, x2_mm, y2_mm}, ...]}
   faults.json     # [{id, name, difficulty, patch: [{ref, to, ...}]}, ...]
   circuit.cir      # spice_base.cir — patched per-fault before each sim run, never edited directly
   <device>.kicad_sch / .kicad_pcb / pcb.glb   # KiCad source + exports
 ```
 
-`testpoints` in `map.json` are derived generically — any `TP`-prefixed ref, resolved via the netlist export. **Never hardcode canonical net names per device** (e.g. `"/Vin" → "VIN"`); that only works for one board and silently produces nothing for every other device.
+`map.json`'s pins/wires/pads/tracks are derived generically for *every* component and net (milestone 8) — not just `TP`-prefixed refs, though those still exist as dedicated test points for a device that wants labeled points. **Never hardcode canonical net names per device** (e.g. `"/Vin" → "VIN"`); that only works for one board and silently produces nothing for every other device.
 
 ## Fault types
 
@@ -38,7 +38,7 @@ devices/<device_id>/
 5. Scoring/game layer (attempts, a session across multiple devices, a "found it" confirmation) — done
 6. 3D PCB probing view (glTF + raycasting), sharing probes/instruments with the schematic view — done (was built ahead of order, before milestone 5 existed as a named milestone, but both are done now)
 7. (optional) Offline/WASM ngspice for a no-backend PWA
-8. Probe placement anywhere (any component pin/pad, or anywhere along a wire/copper trace — not just TP markers) — in progress
+8. Probe placement anywhere (any component pin/pad, or anywhere along a wire/copper trace — not just TP markers) — done
 
 Don't skip ahead to a later milestone until the current one has passing tests and works end-to-end in the browser.
 
@@ -57,5 +57,4 @@ Don't skip ahead to a later milestone until the current one has passing tests an
 
 ## Future work (not started — don't build yet)
 
-- **Probes placeable anywhere, not just at TP markers.** Test points currently render as their own visible symbol, and probing means clicking one of those. Eventually a probe should be placeable directly on any component pin/pad or anywhere along a wire (schematic) / copper trace (PCB), with no dedicated TP component required. When this is built, hit-testing must come from exact wire-segment/track coordinates parsed from the KiCad source — the same "no proximity-guessing" principle as the existing pin-mapping rule (see the schematic-view bullet above) — not from snapping to fixed TP components. Recorded here so it isn't lost once the wiring (schematic) and routing (PCB) work is in place; it depends on both being real geometry, not just net-label connectivity. **Now active — see Milestones.**
 - **DMM mode selection.** Resistance/ohms, diode test, and capacitance modes, in addition to the existing voltage measurement. Not started.

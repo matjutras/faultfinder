@@ -1,12 +1,15 @@
+import type { MouseEvent } from 'react';
 import { useEffect, useState } from 'react';
 import { deviceAssetUrl, getDevice, measure } from './api';
 import { FaultGuess } from './FaultGuess';
 import type { Difficulty } from './faultSelection';
 import { pickRandomFault } from './faultSelection';
 import { schematicMmToPixels } from './kicadCoords';
-import { toggleProbe, visibleResult } from './probeSelection';
+import type { Leads, ProbeTarget } from './probeSelection';
+import { EMPTY_LEADS, placeLead, selectedNodes, visibleResult } from './probeSelection';
 import './SchematicProbeView.css';
 import type { Device, MeasureResult } from './types';
+import { nearestPointOnSegment } from './wireHitTest';
 
 // At the old 500x354 (~3.2px/mm against the 100x110mm page), adjacent TP
 // markers needed >13.6mm of separation just for their 44px tap targets not
@@ -18,6 +21,7 @@ import type { Device, MeasureResult } from './types';
 // scale, not by re-cramming every schematic's layout a second time.
 const SCHEMATIC_WIDTH = 800;
 const SCHEMATIC_HEIGHT = 880;
+const WIRE_HIT_THICKNESS_PX = 14;
 const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard', 'random'];
 
 interface Props {
@@ -25,9 +29,62 @@ interface Props {
   onGuess?: (correct: boolean, firstTryThisRound: boolean) => void;
 }
 
+// A wire segment's clickable hit-strip: an absolutely-positioned div rotated
+// to lie exactly along the segment, wide enough to be comfortably tappable.
+// The click handler snaps the placed lead to the nearest point *on* the
+// segment (not the raw click pixel), so a lead always visually sits on the
+// wire even though the hit-strip is much thicker than the drawn line.
+function WireHit({
+  wireIndex,
+  node,
+  x1,
+  y1,
+  x2,
+  y2,
+  onPlace,
+}: {
+  wireIndex: number;
+  node: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  onPlace: (target: ProbeTarget) => void;
+}) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.hypot(dx, dy);
+  const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+
+  function handleClick(e: MouseEvent<HTMLDivElement>) {
+    const rect = e.currentTarget.parentElement!.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    const hit = nearestPointOnSegment(clickX, clickY, { x1, y1, x2, y2, node });
+    onPlace({ targetId: `wire:${wireIndex}:${hit.x.toFixed(1)}:${hit.y.toFixed(1)}`, node, x: hit.x, y: hit.y });
+  }
+
+  return (
+    <div
+      className="wire-hit"
+      style={{
+        left: x1,
+        top: y1,
+        width: length,
+        height: WIRE_HIT_THICKNESS_PX,
+        transform: `translateY(-50%) rotate(${angleDeg}deg)`,
+        transformOrigin: '0 50%',
+      }}
+      onClick={handleClick}
+      data-testid={`wire-hit-${wireIndex}`}
+      title={node}
+    />
+  );
+}
+
 export function SchematicProbeView({ deviceId, onGuess = () => {} }: Props) {
   const [device, setDevice] = useState<Device | null>(null);
-  const [selected, setSelected] = useState<string[]>([]);
+  const [leads, setLeads] = useState<Leads>(EMPTY_LEADS);
   const [difficulty, setDifficulty] = useState<Difficulty>('easy');
   const [faultId, setFaultId] = useState('healthy');
   const [round, setRound] = useState(0);
@@ -45,20 +102,23 @@ export function SchematicProbeView({ deviceId, onGuess = () => {} }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId]);
 
+  const nodes = selectedNodes(leads);
+
   useEffect(() => {
     setResult(null);
     setError(null);
-    if (selected.length !== 2) return;
-    measure(deviceId, [selected[0], selected[1]], faultId)
+    if (!nodes) return;
+    measure(deviceId, nodes, faultId)
       .then(setResult)
       .catch((e) => setError(e.message));
-  }, [deviceId, selected, faultId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceId, nodes?.[0], nodes?.[1], faultId]);
 
   if (error && !device) return <p className="error">Error: {error}</p>;
   if (!device) return <p>Loading device…</p>;
 
   const currentFault = device.faults.find((f) => f.id === faultId);
-  const shown = visibleResult(result, selected);
+  const shown = visibleResult(result, leads);
 
   function newFault(tier: Difficulty) {
     if (!device) return;
@@ -66,6 +126,10 @@ export function SchematicProbeView({ deviceId, onGuess = () => {} }: Props) {
     setFaultId(pickRandomFault(device.faults, tier).id);
     setRevealed(false);
     setRound((r) => r + 1);
+  }
+
+  function place(target: ProbeTarget) {
+    setLeads((prev) => placeLead(prev, target));
   }
 
   return (
@@ -96,33 +160,61 @@ export function SchematicProbeView({ deviceId, onGuess = () => {} }: Props) {
           controls="none"
           style={{ width: SCHEMATIC_WIDTH, height: SCHEMATIC_HEIGHT, display: 'block' }}
         />
-        {device.testpoints.map((tp) => {
-          const { x, y } = schematicMmToPixels(tp.x_mm, tp.y_mm, SCHEMATIC_WIDTH, SCHEMATIC_HEIGHT);
+        {device.wires.map((w, i) => {
+          const p1 = schematicMmToPixels(w.x1_mm, w.y1_mm, SCHEMATIC_WIDTH, SCHEMATIC_HEIGHT);
+          const p2 = schematicMmToPixels(w.x2_mm, w.y2_mm, SCHEMATIC_WIDTH, SCHEMATIC_HEIGHT);
           return (
-            <button
-              key={tp.tp_id}
-              type="button"
-              className={`probe-marker${selected.includes(tp.tp_id) ? ' selected' : ''}`}
-              style={{ left: x, top: y }}
-              title={tp.label}
-              onClick={() => setSelected((prev) => toggleProbe(prev, tp.tp_id))}
-            >
-              {tp.tp_id}
-            </button>
+            <WireHit
+              key={i}
+              wireIndex={i}
+              node={w.node}
+              x1={p1.x}
+              y1={p1.y}
+              x2={p2.x}
+              y2={p2.y}
+              onPlace={place}
+            />
           );
         })}
+        {device.pins.map((p) => {
+          const { x, y } = schematicMmToPixels(p.x_mm, p.y_mm, SCHEMATIC_WIDTH, SCHEMATIC_HEIGHT);
+          const targetId = `${p.ref}:${p.pin}`;
+          return (
+            <button
+              key={targetId}
+              type="button"
+              className="probe-marker"
+              style={{ left: x, top: y }}
+              title={`${p.ref} pin ${p.pin} (${p.node})`}
+              data-testid={`pin-${p.ref}-${p.pin}`}
+              onClick={() => place({ targetId, node: p.node, x, y })}
+            />
+          );
+        })}
+        {leads.red && (
+          <div className="lead-marker red" style={{ left: leads.red.x, top: leads.red.y }} data-testid="lead-red" />
+        )}
+        {leads.black && (
+          <div
+            className="lead-marker black"
+            style={{ left: leads.black.x, top: leads.black.y }}
+            data-testid="lead-black"
+          />
+        )}
       </div>
 
-      <p className="hint">Click two test points to place probes.</p>
+      <p className="hint">
+        Place the red lead, then the black lead — click any pin or anywhere along a wire.
+      </p>
 
       {error && <p className="error">Error: {error}</p>}
 
-      {shown && (
+      {shown && nodes && (
         <div className="readout">
           <span className="value">{shown.differential_volts.toFixed(3)} V</span>
           <span className="probes">
-            {selected[0]} ({shown.probes[selected[0]].toFixed(3)} V) &rarr; {selected[1]} (
-            {shown.probes[selected[1]].toFixed(3)} V)
+            {nodes[0]} ({shown.probes.find((p) => p.node === nodes[0])!.volts.toFixed(3)} V) &rarr; {nodes[1]} (
+            {shown.probes.find((p) => p.node === nodes[1])!.volts.toFixed(3)} V)
           </span>
         </div>
       )}

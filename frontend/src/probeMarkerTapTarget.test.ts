@@ -14,6 +14,8 @@ import { describe, expect, it } from 'vitest';
 // asserts the tappable `.probe-marker` box stayed enlarged to 44x44 while the
 // *visible* dot (`::before`) stayed at its original, smaller 22x22 -- the
 // whole point being a bigger tap target without a bigger-looking marker.
+// `.probe-marker` now marks every component pin (milestone 8), not just
+// dedicated TP markers, but the same tap-target sizing rule still applies.
 const CSS_PATH = join(dirname(fileURLToPath(import.meta.url)), 'SchematicProbeView.css');
 const css = readFileSync(CSS_PATH, 'utf-8');
 

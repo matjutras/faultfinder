@@ -16,13 +16,13 @@ export async function getDevice(deviceId: string): Promise<Device> {
 
 export async function measure(
   deviceId: string,
-  tpIds: [string, string],
+  nodes: [string, string],
   faultId: string,
 ): Promise<MeasureResult> {
   const resp = await fetch(`${API_BASE}/api/devices/${deviceId}/measure`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tp_ids: tpIds, fault_id: faultId }),
+    body: JSON.stringify({ nodes, fault_id: faultId }),
   });
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));

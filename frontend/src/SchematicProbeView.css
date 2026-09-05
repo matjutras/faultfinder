@@ -21,9 +21,13 @@
 }
 
 .probe-marker {
-  /* The actual tappable box is 44x44 (a comfortable mobile touch target) even
-     though the visible dot stays 22px, via the ::before below -- enlarging
-     the box itself keeps the whole area clickable without extra JS. */
+  /* Every component pin is now a click target, not just dedicated TP
+     markers -- kept subtle (neutral gray) so a 15-pin device doesn't read as
+     15 competing blue dots; the actual placed leads (below) are the bold
+     red/black indicators. The tappable box stays 44x44 (a comfortable mobile
+     touch target) even though the visible dot stays 22px, via the ::before
+     below -- enlarging the box itself keeps the whole area clickable without
+     extra JS. */
   position: absolute;
   transform: translate(-50%, -50%);
   width: 44px;
@@ -34,9 +38,6 @@
   border: none;
   background: none;
   padding: 0;
-  color: #1b6fd6;
-  font-size: 9px;
-  font-weight: 600;
   cursor: pointer;
   line-height: 1;
 }
@@ -47,16 +48,35 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: 2px solid #1b6fd6;
-  background: rgba(27, 111, 214, 0.15);
+  border: 1.5px solid rgba(80, 80, 80, 0.6);
+  background: rgba(120, 120, 120, 0.12);
 }
 
-.probe-marker.selected::before {
-  background: #1b6fd6;
+.wire-hit {
+  position: absolute;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
 }
 
-.probe-marker.selected {
-  color: #fff;
+.lead-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+.lead-marker.red {
+  background: #c0392b;
+}
+
+.lead-marker.black {
+  background: #1a1a1a;
 }
 
 .readout {
