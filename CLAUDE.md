@@ -35,9 +35,10 @@ devices/<device_id>/
 2. Real KiCanvas rendering + netlist-based pin snapping
 3. Fault engine (all types) + easy/medium/hard/random difficulty
 4. Second and third device through the importer only, zero app-code changes — this is the check that the pipeline actually generalizes
-5. Scoring/game layer (attempts, a session across multiple devices, a "found it" confirmation) — in progress
-6. 3D PCB probing view (glTF + raycasting), sharing probes/instruments with the schematic view — already partially built ahead of order (this landed before milestone 5); finish milestone 5 before building further on it
+5. Scoring/game layer (attempts, a session across multiple devices, a "found it" confirmation) — done
+6. 3D PCB probing view (glTF + raycasting), sharing probes/instruments with the schematic view — done (was built ahead of order, before milestone 5 existed as a named milestone, but both are done now)
 7. (optional) Offline/WASM ngspice for a no-backend PWA
+8. Probe placement anywhere (any component pin/pad, or anywhere along a wire/copper trace — not just TP markers) — in progress
 
 Don't skip ahead to a later milestone until the current one has passing tests and works end-to-end in the browser.
 
@@ -56,4 +57,5 @@ Don't skip ahead to a later milestone until the current one has passing tests an
 
 ## Future work (not started — don't build yet)
 
-- **Probes placeable anywhere, not just at TP markers.** Test points currently render as their own visible symbol, and probing means clicking one of those. Eventually a probe should be placeable directly on any component pin/pad or anywhere along a wire (schematic) / copper trace (PCB), with no dedicated TP component required. When this is built, hit-testing must come from exact wire-segment/track coordinates parsed from the KiCad source — the same "no proximity-guessing" principle as the existing pin-mapping rule (see the schematic-view bullet above) — not from snapping to fixed TP components. Recorded here so it isn't lost once the wiring (schematic) and routing (PCB) work is in place; it depends on both being real geometry, not just net-label connectivity.
+- **Probes placeable anywhere, not just at TP markers.** Test points currently render as their own visible symbol, and probing means clicking one of those. Eventually a probe should be placeable directly on any component pin/pad or anywhere along a wire (schematic) / copper trace (PCB), with no dedicated TP component required. When this is built, hit-testing must come from exact wire-segment/track coordinates parsed from the KiCad source — the same "no proximity-guessing" principle as the existing pin-mapping rule (see the schematic-view bullet above) — not from snapping to fixed TP components. Recorded here so it isn't lost once the wiring (schematic) and routing (PCB) work is in place; it depends on both being real geometry, not just net-label connectivity. **Now active — see Milestones.**
+- **DMM mode selection.** Resistance/ohms, diode test, and capacitance modes, in addition to the existing voltage measurement. Not started.
