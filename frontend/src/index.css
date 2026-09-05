@@ -109,3 +109,9 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+.score-bar {
+  font-family: var(--mono);
+  color: var(--text-h);
+  margin-bottom: 0.5rem;
+}

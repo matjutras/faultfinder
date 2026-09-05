@@ -73,3 +73,22 @@
 .error {
   color: #c0392b;
 }
+
+.fault-guess {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.guess-result {
+  font-weight: 600;
+}
+
+.guess-result.correct {
+  color: #1a7f37;
+}
+
+.guess-result.incorrect {
+  color: #c0392b;
+}

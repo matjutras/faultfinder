@@ -15,7 +15,10 @@ const DEVICE = {
     { tp_id: 'TP1', label: 'Input (VIN)', node: 'VIN', x_mm: 101.6, y_mm: 81.28 },
     { tp_id: 'TP2', label: 'Output (VOUT)', node: 'VOUT', x_mm: 101.6, y_mm: 111.76 },
   ],
-  faults: [{ id: 'healthy', name: 'No fault', difficulty: 'n/a', patch: [] }],
+  faults: [
+    { id: 'healthy', name: 'No fault', difficulty: 'n/a', patch: [] },
+    { id: 'r1_open', name: 'R1 open circuit', difficulty: 'easy', patch: [] },
+  ],
 };
 
 const OTHER_DEVICE = {
@@ -105,5 +108,32 @@ describe('App', () => {
     expect(screen.queryByText('3.000 V')).not.toBeInTheDocument();
     expect(screen.getByTitle('Input (VIN)')).not.toHaveClass('selected');
     expect(screen.getByTitle('Output (VOUT)')).not.toHaveClass('selected');
+  });
+
+  it('keeps the session score across a device switch, unlike the per-device probe state', async () => {
+    // The score is deliberately owned by App, not by SchematicProbeView/
+    // PcbProbeView -- those get remounted on device switch (key={deviceId})
+    // so per-device state resets, but a session score spanning every device
+    // must survive that same remount.
+    vi.spyOn(api, 'listDevices').mockResolvedValue(DEVICE_LIST);
+    vi.spyOn(api, 'getDevice').mockImplementation((id) =>
+      Promise.resolve(id === OTHER_DEVICE.id ? OTHER_DEVICE : DEVICE),
+    );
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Simple Voltage Divider' });
+    expect(screen.getByText(/Solved: 0\/0/)).toBeInTheDocument();
+
+    // only one non-"healthy" fault exists in the fixture pool, so it's
+    // deterministically the one drawn regardless of Math.random
+    await user.selectOptions(screen.getByRole('combobox', { name: /which fault/i }), 'r1_open');
+    await user.click(screen.getByRole('button', { name: 'Submit guess' }));
+    expect(await screen.findByText(/Solved: 1\/1/)).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Device:'), OTHER_DEVICE.id);
+    await screen.findByRole('heading', { name: 'Resistor Bridge' });
+
+    expect(screen.getByText(/Solved: 1\/1/)).toBeInTheDocument();
   });
 });

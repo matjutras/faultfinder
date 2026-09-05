@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useRef, useState } from 'react';
 import type { Mesh, PerspectiveCamera } from 'three';
 import { deviceAssetUrl, getDevice, measure } from './api';
+import { FaultGuess } from './FaultGuess';
 import type { Difficulty } from './faultSelection';
 import { pickRandomFault } from './faultSelection';
 import { pcbCameraFraming, pcbHitTargetWorldRadius, pcbMmToThreeVec3 } from './kicadCoords';
@@ -14,6 +15,7 @@ const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard', 'random'];
 
 interface Props {
   deviceId: string;
+  onGuess?: (correct: boolean, firstTryThisRound: boolean) => void;
 }
 
 function PcbModel({ url }: { url: string }) {
@@ -78,11 +80,12 @@ export function ProbeMarker({
   );
 }
 
-export function PcbProbeView({ deviceId }: Props) {
+export function PcbProbeView({ deviceId, onGuess = () => {} }: Props) {
   const [device, setDevice] = useState<Device | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [difficulty, setDifficulty] = useState<Difficulty>('easy');
   const [faultId, setFaultId] = useState('healthy');
+  const [round, setRound] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [result, setResult] = useState<MeasureResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +126,7 @@ export function PcbProbeView({ deviceId }: Props) {
     setDifficulty(tier);
     setFaultId(pickRandomFault(device.faults, tier).id);
     setRevealed(false);
+    setRound((r) => r + 1);
   }
 
   return (
@@ -183,6 +187,8 @@ export function PcbProbeView({ deviceId }: Props) {
           </span>
         </div>
       )}
+
+      <FaultGuess key={round} faults={device.faults} actualFaultId={faultId} onGuess={onGuess} />
     </div>
   );
 }

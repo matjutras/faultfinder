@@ -65,7 +65,11 @@ describe('SchematicProbeView', () => {
     await placeBothProbes(user);
     await screen.findByText('9.000 V');
 
-    expect(screen.queryByText(/R1 open circuit/)).not.toBeInTheDocument();
+    // Exact match, not a substring regex: "R1 open circuit" alone also
+    // appears as one of the (deliberately non-identifying) guess dropdown's
+    // options, which isn't a leak -- the reveal display's own text is
+    // "Fault: R1 open circuit", so that's what must be absent.
+    expect(screen.queryByText('Fault: R1 open circuit')).not.toBeInTheDocument();
   });
 
   it('reveals and hides the fault name on demand', async () => {
@@ -138,6 +142,27 @@ describe('SchematicProbeView', () => {
     expect(await screen.findByText('0.000 V')).toBeInTheDocument();
   });
 
+  it('resets the guess form on "New Fault" even when the same fault is drawn again', async () => {
+    // Regression test: FaultGuess was keyed on `faultId`, so when the random
+    // draw happens to redraw the SAME fault (easy has only 2 candidates here,
+    // a 50/50 chance), the key didn't change, React didn't remount it, and it
+    // kept showing the previous round's "Correct!" message forever instead of
+    // a fresh guess form -- fixed by keying on a monotonic round counter
+    // instead of the fault id itself.
+    const user = userEvent.setup();
+    render(<SchematicProbeView deviceId="voltage_divider_01" />); // Math.random mocked to 0 -> always r1_open
+
+    await screen.findByText('Simple Voltage Divider');
+    await user.selectOptions(screen.getByRole('combobox', { name: /which fault/i }), 'r1_open');
+    await user.click(screen.getByRole('button', { name: 'Submit guess' }));
+    expect(await screen.findByText(/Correct!/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'New Fault' })); // redraws r1_open again
+
+    expect(screen.queryByText(/Correct!/)).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Submit guess' })).toBeInTheDocument();
+  });
+
   it('"New Fault" can pick a different fault within the same tier and re-measures without reclicking probes', async () => {
     const measureSpy = vi.spyOn(api, 'measure');
     const user = userEvent.setup();
@@ -167,7 +192,7 @@ describe('SchematicProbeView', () => {
     await user.click(screen.getByRole('button', { name: 'Reveal fault' }));
     await screen.findByText('Fault: R1 open circuit');
 
-    await user.selectOptions(screen.getByRole('combobox'), 'medium');
+    await user.selectOptions(screen.getByLabelText('Difficulty:'), 'medium');
 
     await waitFor(() => expect(measureSpy).toHaveBeenCalledWith('voltage_divider_01', ['TP1', 'TP2'], 'r1_drift_high'));
     expect(await screen.findByText('7.500 V')).toBeInTheDocument();

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { deviceAssetUrl, getDevice, measure } from './api';
+import { FaultGuess } from './FaultGuess';
 import type { Difficulty } from './faultSelection';
 import { pickRandomFault } from './faultSelection';
 import { schematicMmToPixels } from './kicadCoords';
@@ -13,13 +14,15 @@ const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard', 'random'];
 
 interface Props {
   deviceId: string;
+  onGuess?: (correct: boolean, firstTryThisRound: boolean) => void;
 }
 
-export function SchematicProbeView({ deviceId }: Props) {
+export function SchematicProbeView({ deviceId, onGuess = () => {} }: Props) {
   const [device, setDevice] = useState<Device | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [difficulty, setDifficulty] = useState<Difficulty>('easy');
   const [faultId, setFaultId] = useState('healthy');
+  const [round, setRound] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [result, setResult] = useState<MeasureResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +57,7 @@ export function SchematicProbeView({ deviceId }: Props) {
     setDifficulty(tier);
     setFaultId(pickRandomFault(device.faults, tier).id);
     setRevealed(false);
+    setRound((r) => r + 1);
   }
 
   return (
@@ -114,6 +118,8 @@ export function SchematicProbeView({ deviceId }: Props) {
           </span>
         </div>
       )}
+
+      <FaultGuess key={round} faults={device.faults} actualFaultId={faultId} onGuess={onGuess} />
     </div>
   );
 }
