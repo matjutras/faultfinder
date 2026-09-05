@@ -18,6 +18,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://192.168.0.185:5173",
+        "https://apps.matjutras.com",
     ],
     allow_methods=["*"],
     allow_headers=["*"],
