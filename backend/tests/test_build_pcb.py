@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -57,6 +58,67 @@ def test_build_pcb_places_every_testpoint_for_all_devices(device_id, tp_ids, tmp
         assert 0 <= pad["x_mm"] <= manifest["board_size_mm"]["width"]
         assert 0 <= pad["y_mm"] <= manifest["board_size_mm"]["height"]
     assert manifest["board_thickness_mm"] > 0
+
+
+def _orient(a, b, c):
+    val = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    if abs(val) < 1e-6:
+        return 0
+    return 1 if val > 0 else -1
+
+
+def _on_segment(a, b, c):
+    return (min(a[0], b[0]) - 1e-6 <= c[0] <= max(a[0], b[0]) + 1e-6
+            and min(a[1], b[1]) - 1e-6 <= c[1] <= max(a[1], b[1]) + 1e-6)
+
+
+def _segments_intersect(p1, p2, p3, p4):
+    if {p1, p2} & {p3, p4}:
+        return False
+    o1, o2, o3, o4 = _orient(p1, p2, p3), _orient(p1, p2, p4), _orient(p3, p4, p1), _orient(p3, p4, p2)
+    if o1 != o2 and o3 != o4:
+        return True
+    return ((o1 == 0 and _on_segment(p1, p2, p3)) or (o2 == 0 and _on_segment(p1, p2, p4))
+            or (o3 == 0 and _on_segment(p3, p4, p1)) or (o4 == 0 and _on_segment(p3, p4, p2)))
+
+
+_SEGMENT_RE = re.compile(
+    r'\(segment\s*\(start ([-\d.]+) ([-\d.]+)\)\s*\(end ([-\d.]+) ([-\d.]+)\)\s*'
+    r'\(width [\d.]+\)\s*\(layer "([^"]+)"\)\s*\(net (\d+)\)'
+)
+
+
+@requires_kicad
+@requires_pcbnew
+@pytest.mark.parametrize("device_id", [
+    "voltage_divider_01", "resistor_ladder_02", "diode_indicator_03",
+    "transistor_switch_04", "resistor_bridge_05",
+])
+def test_build_pcb_has_no_same_layer_cross_net_track_crossings(device_id, tmp_path):
+    """Regression test: the first routing pass connected same-net pads with a
+    straight line regardless of what else was in the way -- real, DRC-invalid
+    crossings on the same copper layer (even voltage_divider_01, a 2-resistor
+    device, had 3 of them among just 4 segments). Parses the actual emitted
+    segment geometry from the real .kicad_pcb output, not the manifest, since
+    that's the only place a routing regression would actually show up."""
+    _run_build_pcb(device_id, tmp_path)
+    pcb_text = (tmp_path / f"{device_id}.kicad_pcb").read_text()
+
+    segments = [
+        ((float(x1), float(y1)), (float(x2), float(y2)), layer, net)
+        for x1, y1, x2, y2, layer, net in _SEGMENT_RE.findall(pcb_text)
+    ]
+    assert len(segments) > 0
+
+    crossings = [
+        (segments[i], segments[j])
+        for i in range(len(segments))
+        for j in range(i + 1, len(segments))
+        if segments[i][3] != segments[j][3]  # different nets
+        and segments[i][2] == segments[j][2]  # same layer
+        and _segments_intersect(segments[i][0], segments[i][1], segments[j][0], segments[j][1])
+    ]
+    assert crossings == []
 
 
 @requires_kicad

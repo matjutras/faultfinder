@@ -11,13 +11,17 @@ reuses the same `kicad-cli sch export netlist --format kicadxml` the
 schematic-side importer already produces, and drives placement + net
 assignment from it directly via the pcbnew API.
 
-Placement is a plain grid, and routing (below) is straight point-to-point
-copper between same-net pads in placement order -- not DRC-clean/manufacturable
-routing (no via/crossing avoidance), since the only thing v1 needs out of the
-PCB is a 3D glb for visual/probe purposes (see CLAUDE.md milestone 5). The
-goal is just that the board reads as one connected circuit instead of
-floating unconnected parts, which a straight chain already achieves given the
-simple grid layout with generous pad spacing.
+Placement is a plain grid. Routing (below) is orthogonal (Manhattan) copper
+between same-net pads in placement order, with real crossing detection: a
+new segment that would overlap another net's segment on the same layer (an
+actual DRC violation, not just visually messy -- copper doesn't know which
+net it's "supposed" to be) drops to the back copper layer with a via at each
+end instead. Not a real autorouter (no ripup/retry, no attempt at a shortest
+or prettiest path -- just orthogonal-with-a-fallback-layer), since the only
+thing v1 needs out of the PCB is a 3D glb for visual/probe purposes (see
+CLAUDE.md milestone 5), but every trace is a real, non-crossing copper path,
+verified per-device against the actual emitted segment geometry, not assumed
+from "it compiled."
 
 Footprint choice is generic across devices: keyed by the schematic symbol's
 libsource `part` name (e.g. "R", "D", "TestPoint"), same spirit as
@@ -54,6 +58,10 @@ GRID_PITCH_MM = 12
 MARGIN_MM = 6
 BOARD_THICKNESS_MM = 1.51  # KiCad's default stackup total; fixed since we never customize it
 TRACK_WIDTH_MM = 0.25
+VIA_WIDTH_MM = 0.6
+VIA_DRILL_MM = 0.3
+
+Point = tuple[float, float]
 
 
 class PcbGenError(Exception):
@@ -62,6 +70,48 @@ class PcbGenError(Exception):
 
 def _mm(v: float) -> int:
     return int(round(v * 1_000_000))
+
+
+def _orient(a: Point, b: Point, c: Point) -> int:
+    val = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    if abs(val) < 1e-6:
+        return 0
+    return 1 if val > 0 else -1
+
+
+def _on_segment(a: Point, b: Point, c: Point) -> bool:
+    return (min(a[0], b[0]) - 1e-6 <= c[0] <= max(a[0], b[0]) + 1e-6
+            and min(a[1], b[1]) - 1e-6 <= c[1] <= max(a[1], b[1]) + 1e-6)
+
+
+def _segments_intersect(p1: Point, p2: Point, p3: Point, p4: Point) -> bool:
+    """True if segment p1-p2 crosses p3-p4 -- sharing just an *endpoint* (a
+    connection, not a crossing) doesn't count, since two different nets'
+    segments are never supposed to share an endpoint anyway, and this also
+    lets a segment touch its own chain's neighbor without tripping itself."""
+    if {p1, p2} & {p3, p4}:
+        return False
+    o1, o2, o3, o4 = _orient(p1, p2, p3), _orient(p1, p2, p4), _orient(p3, p4, p1), _orient(p3, p4, p2)
+    if o1 != o2 and o3 != o4:
+        return True
+    if o1 == 0 and _on_segment(p1, p2, p3):
+        return True
+    if o2 == 0 and _on_segment(p1, p2, p4):
+        return True
+    if o3 == 0 and _on_segment(p3, p4, p1):
+        return True
+    if o4 == 0 and _on_segment(p3, p4, p2):
+        return True
+    return False
+
+
+def _l_route(p1: Point, p2: Point, bend: str) -> list[Point]:
+    """Two-segment orthogonal path between arbitrary points -- 'hv' bends at
+    (x2,y1), 'vh' at (x1,y2). Degenerates to one segment if already aligned."""
+    if p1[0] == p2[0] or p1[1] == p2[1]:
+        return [p1, p2]
+    corner = (p2[0], p1[1]) if bend == "hv" else (p1[0], p2[1])
+    return [p1, corner, p2]
 
 
 def _export_netlist_xml(sch_path: Path) -> str:
@@ -150,24 +200,71 @@ def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
         if ref.startswith("TP"):
             pads_by_ref[ref] = {"x_mm": x_mm, "y_mm": y_mm}
 
-    # Straight point-to-point copper between same-net pads, so the board
-    # reads as one connected circuit instead of floating unconnected parts
-    # (see module docstring -- not DRC-clean routing, just visual/electrical
-    # continuity, which a straight chain already gives with this simple,
-    # generously-spaced grid layout).
+    # Orthogonal copper between same-net pads, so the board reads as one
+    # connected circuit instead of floating unconnected parts -- with real
+    # crossing detection (see module docstring): a segment that would overlap
+    # another net's segment on the same layer drops to the back layer with a
+    # via at each end instead, exactly like a real 2-layer board routes a
+    # crossing that a single layer can't.
     track_width = _mm(TRACK_WIDTH_MM)
-    for net_name, pads in pads_by_net.items():
+    front_segments: list[tuple[Point, Point]] = []
+    back_segments: list[tuple[Point, Point]] = []
+    vias_placed: set[Point] = set()
+
+    def _to_mm(pad) -> Point:
+        pos = pad.GetPosition()
+        return (pos.x / 1_000_000, pos.y / 1_000_000)
+
+    def _place_via(pt: Point, net_item):
+        if pt in vias_placed:
+            return
+        via = pcbnew.PCB_VIA(board)
+        via.SetPosition(pcbnew.VECTOR2I(_mm(pt[0]), _mm(pt[1])))
+        via.SetViaType(pcbnew.VIATYPE_THROUGH)
+        via.SetWidth(_mm(VIA_WIDTH_MM))
+        via.SetDrill(_mm(VIA_DRILL_MM))
+        via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
+        via.SetNet(net_item)
+        board.Add(via)
+        vias_placed.add(pt)
+
+    def _place_segment(a: Point, b: Point, net_item):
+        crosses_front = any(_segments_intersect(a, b, *other) for other in front_segments)
+        layer = pcbnew.B_Cu if crosses_front else pcbnew.F_Cu
+        if crosses_front:
+            _place_via(a, net_item)
+            _place_via(b, net_item)
+        track = pcbnew.PCB_TRACK(board)
+        track.SetStart(pcbnew.VECTOR2I(_mm(a[0]), _mm(a[1])))
+        track.SetEnd(pcbnew.VECTOR2I(_mm(b[0]), _mm(b[1])))
+        track.SetWidth(track_width)
+        track.SetLayer(layer)
+        track.SetNet(net_item)
+        board.Add(track)
+        (back_segments if crosses_front else front_segments).append((a, b))
+
+    def _front_crossings(path: list[Point]) -> int:
+        return sum(
+            any(_segments_intersect(p1, p2, *other) for other in front_segments)
+            for p1, p2 in zip(path, path[1:])
+        )
+
+    for net_name in sorted(pads_by_net):
+        pads = pads_by_net[net_name]
         if len(pads) < 2:
             continue
         ordered = sorted(pads, key=lambda p: (p.GetPosition().x, p.GetPosition().y))
-        for a, b in zip(ordered, ordered[1:]):
-            track = pcbnew.PCB_TRACK(board)
-            track.SetStart(a.GetPosition())
-            track.SetEnd(b.GetPosition())
-            track.SetWidth(track_width)
-            track.SetLayer(pcbnew.F_Cu)
-            track.SetNet(net_items[net_name])
-            board.Add(track)
+        net_item = net_items[net_name]
+        for pad_a, pad_b in zip(ordered, ordered[1:]):
+            a, b = _to_mm(pad_a), _to_mm(pad_b)
+            # try both bend directions against what's already on the front
+            # layer, and take whichever needs fewer of its (up to 2) segments
+            # to fall back to the back layer -- a cheap way to avoid an
+            # unnecessary via when the other bend direction would clear fine
+            hv, vh = _l_route(a, b, "hv"), _l_route(a, b, "vh")
+            path = hv if _front_crossings(hv) <= _front_crossings(vh) else vh
+            for p1, p2 in zip(path, path[1:]):
+                _place_segment(p1, p2, net_item)
 
     rows = max(1, -(-len(placeable) // cols))
     # components span [MARGIN, MARGIN + (n-1)*PITCH] on each axis, so a board
