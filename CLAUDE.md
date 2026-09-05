@@ -35,8 +35,9 @@ devices/<device_id>/
 2. Real KiCanvas rendering + netlist-based pin snapping
 3. Fault engine (all types) + easy/medium/hard/random difficulty
 4. Second and third device through the importer only, zero app-code changes — this is the check that the pipeline actually generalizes
-5. 3D PCB probing view (glTF + raycasting), sharing probes/instruments with the schematic view
-6. (optional) Offline/WASM ngspice for a no-backend PWA
+5. Scoring/game layer (attempts, a session across multiple devices, a "found it" confirmation) — in progress
+6. 3D PCB probing view (glTF + raycasting), sharing probes/instruments with the schematic view — already partially built ahead of order (this landed before milestone 5); finish milestone 5 before building further on it
+7. (optional) Offline/WASM ngspice for a no-backend PWA
 
 Don't skip ahead to a later milestone until the current one has passing tests and works end-to-end in the browser.
 
