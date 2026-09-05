@@ -52,8 +52,14 @@ def find_fault(device_id: str, fault_id: str) -> dict:
     raise ValueError(f"unknown fault_id {fault_id!r} for device {device_id!r}")
 
 
-def find_testpoint(device_id: str, tp_id: str) -> dict:
-    for tp in load_map(device_id)["testpoints"]:
-        if tp["tp_id"] == tp_id:
-            return tp
-    raise ValueError(f"unknown tp_id {tp_id!r} for device {device_id!r}")
+def load_valid_nodes(device_id: str) -> set[str]:
+    """Every real SPICE node name this device's probe geometry actually
+    resolves to -- the schematic's pins/wires and the PCB's pads/tracks all
+    ultimately name the same circuit.cir nodes, so any of them is a valid
+    measure() target."""
+    m = load_map(device_id)
+    nodes = {p["node"] for p in m.get("pins", [])}
+    nodes |= {w["node"] for w in m.get("wires", [])}
+    nodes |= {p["node"] for p in m.get("pcb_pads", [])}
+    nodes |= {t["node"] for t in m.get("pcb_tracks", [])}
+    return nodes

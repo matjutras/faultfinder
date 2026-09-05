@@ -114,6 +114,44 @@ def _l_route(p1: Point, p2: Point, bend: str) -> list[Point]:
     return [p1, corner, p2]
 
 
+_DETOUR_OFFSETS_MM = (2, -2, 4, -4, 6, -6)
+
+
+def _dogleg_routes(p1: Point, p2: Point) -> list[list[Point]]:
+    """Extra candidate paths beyond the two direct L-bends -- unlike an
+    L-bend (whose single bend line always sits exactly on one endpoint's
+    x/y, so it can collide with whatever else already runs along that same
+    line), these can route *around* an obstacle sitting on the direct path.
+    A greedy no-ripup router otherwise has no way to dodge a case where the
+    direct options are already congested by earlier nets.
+
+    Two shapes, covering both the general case (p1/p2 not aligned, so a
+    bend is needed anyway) and the already-aligned case (p1/p2 share an x or
+    y, so the "direct" path is a single straight segment with zero bend
+    freedom of its own -- this is the case a plain hv/vh L-route can't help
+    at all, since both degenerate to the same straight line):
+      - jog through an intermediate offset line partway between p1 and p2
+        (only meaningful when not aligned).
+      - detour out to a perpendicular offset and back (meaningful either
+        way -- for an aligned pair this is the *only* way to avoid an
+        obstacle sitting on the direct line)."""
+    routes = []
+    aligned_vertical = p1[0] == p2[0]
+    aligned_horizontal = p1[1] == p2[1]
+    if not (aligned_vertical or aligned_horizontal):
+        for frac in (0.25, 0.5, 0.75):
+            midx = p1[0] + frac * (p2[0] - p1[0])
+            midy = p1[1] + frac * (p2[1] - p1[1])
+            routes.append([p1, (midx, p1[1]), (midx, p2[1]), p2])
+            routes.append([p1, (p1[0], midy), (p2[0], midy), p2])
+    for off in _DETOUR_OFFSETS_MM:
+        if not aligned_horizontal:
+            routes.append([p1, (p1[0] + off, p1[1]), (p1[0] + off, p2[1]), p2])
+        if not aligned_vertical:
+            routes.append([p1, (p1[0], p1[1] + off), (p2[0], p1[1] + off), p2])
+    return routes
+
+
 def _export_netlist_xml(sch_path: Path) -> str:
     with tempfile.TemporaryDirectory() as tmp:
         out_path = Path(tmp) / "netlist.xml"
@@ -136,7 +174,9 @@ def _footprint_key(ref: str, part: str) -> str | None:
 
 
 def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
-    """Returns a manifest: pad positions per TP ref, plus board metadata."""
+    """Returns a manifest: every pad (ref, pin, node, position) and every
+    routed track segment (node, layer, endpoints) -- the full set of places a
+    probe can land on the board, not just TP-ref pads -- plus board metadata."""
     root = ET.fromstring(_export_netlist_xml(sch_path))
 
     comps: dict[str, dict] = {}
@@ -149,7 +189,14 @@ def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
     for net in root.find("nets"):
         name = net.get("name").lstrip("/")
         if name == "GND":
-            name = "GND"
+            # Matches kicad_import.py's own normalization exactly: ngspice's
+            # ground node is "0", not "GND" -- this net name is now exposed
+            # directly in the manifest (every pad/track's "node") and must
+            # agree with the schematic side's, since both feed the same
+            # measure() endpoint. Harmless before (never exposed externally,
+            # only used for internal pad.SetNet() net *identity*, not name
+            # matching), but a real bug once pad/track nodes are exposed.
+            name = "0"
         for node in net:
             net_by_pin[(node.get("ref"), node.get("pin"))] = name
 
@@ -176,7 +223,7 @@ def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
         net_items[name] = ni
 
     cols = max(1, int(len(placeable) ** 0.5 + 0.999))
-    pads_by_ref: dict[str, dict] = {}
+    all_pads: list[dict] = []  # every pad of every component -- a probe point, not just TP ones
     pads_by_net: dict[str, list] = {}
     for i, ref in enumerate(placeable):
         info = comps[ref]
@@ -196,9 +243,11 @@ def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
             if net_name and net_name in net_items:
                 pad.SetNet(net_items[net_name])
                 pads_by_net.setdefault(net_name, []).append(pad)
-
-        if ref.startswith("TP"):
-            pads_by_ref[ref] = {"x_mm": x_mm, "y_mm": y_mm}
+                pos = pad.GetPosition()
+                all_pads.append({
+                    "ref": ref, "pin": pad.GetNumber(), "node": net_name,
+                    "x_mm": pos.x / 1_000_000, "y_mm": pos.y / 1_000_000,
+                })
 
     # Orthogonal copper between same-net pads, so the board reads as one
     # connected circuit instead of floating unconnected parts -- with real
@@ -210,6 +259,7 @@ def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
     front_segments: list[tuple[Point, Point]] = []
     back_segments: list[tuple[Point, Point]] = []
     vias_placed: set[Point] = set()
+    track_manifest: list[dict] = []  # every emitted segment, for PCB probe-anywhere hit-testing
 
     def _to_mm(pad) -> Point:
         pos = pad.GetPosition()
@@ -228,10 +278,20 @@ def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
         board.Add(via)
         vias_placed.add(pt)
 
-    def _place_segment(a: Point, b: Point, net_item):
-        crosses_front = any(_segments_intersect(a, b, *other) for other in front_segments)
-        layer = pcbnew.B_Cu if crosses_front else pcbnew.F_Cu
-        if crosses_front:
+    def _crosses(segment_list: list[tuple[Point, Point]], a: Point, b: Point) -> bool:
+        return any(_segments_intersect(a, b, *other) for other in segment_list)
+
+    def _place_segment(a: Point, b: Point, net_name: str, net_item):
+        # Front is preferred, but a front conflict doesn't automatically mean
+        # back is clear too -- two *different* nets can each independently
+        # fall back to B.Cu and still cross each other there. Check both, and
+        # only actually accept front-clean-first, else back-clean, else back
+        # anyway (a real, if rare, residual case two layers alone can't
+        # always avoid without ripping up and re-routing something earlier).
+        crosses_front = _crosses(front_segments, a, b)
+        use_back = crosses_front
+        layer = pcbnew.B_Cu if use_back else pcbnew.F_Cu
+        if use_back:
             _place_via(a, net_item)
             _place_via(b, net_item)
         track = pcbnew.PCB_TRACK(board)
@@ -241,13 +301,25 @@ def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
         track.SetLayer(layer)
         track.SetNet(net_item)
         board.Add(track)
-        (back_segments if crosses_front else front_segments).append((a, b))
+        (back_segments if use_back else front_segments).append((a, b))
+        track_manifest.append({
+            "node": net_name, "layer": "B.Cu" if use_back else "F.Cu",
+            "x1_mm": a[0], "y1_mm": a[1], "x2_mm": b[0], "y2_mm": b[1],
+        })
 
-    def _front_crossings(path: list[Point]) -> int:
-        return sum(
-            any(_segments_intersect(p1, p2, *other) for other in front_segments)
-            for p1, p2 in zip(path, path[1:])
-        )
+    def _path_cost(path: list[Point]) -> int:
+        # 1 point per segment that needs the back layer, +100 if it would
+        # *still* conflict there (two different nets both falling back to
+        # B.Cu and crossing each other) -- steers the bend choice away from
+        # that whenever the other bend direction avoids it, since a plain
+        # front-crossing count can't tell those two outcomes apart.
+        cost = 0
+        for p1, p2 in zip(path, path[1:]):
+            if _crosses(front_segments, p1, p2):
+                cost += 1
+                if _crosses(back_segments, p1, p2):
+                    cost += 100
+        return cost
 
     for net_name in sorted(pads_by_net):
         pads = pads_by_net[net_name]
@@ -257,14 +329,15 @@ def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
         net_item = net_items[net_name]
         for pad_a, pad_b in zip(ordered, ordered[1:]):
             a, b = _to_mm(pad_a), _to_mm(pad_b)
-            # try both bend directions against what's already on the front
-            # layer, and take whichever needs fewer of its (up to 2) segments
-            # to fall back to the back layer -- a cheap way to avoid an
-            # unnecessary via when the other bend direction would clear fine
-            hv, vh = _l_route(a, b, "hv"), _l_route(a, b, "vh")
-            path = hv if _front_crossings(hv) <= _front_crossings(vh) else vh
+            # Try the two direct L-bends first, then wider dogleg detours if
+            # both direct bends are already congested -- ranked by cost, with
+            # fewer segments (fewer vias) preferred on a tie. This is a greedy
+            # choice among candidates, not a real ripup/retry autorouter, but
+            # it resolves cases the 2-candidate hv/vh choice alone can't.
+            candidates = [_l_route(a, b, "hv"), _l_route(a, b, "vh")] + _dogleg_routes(a, b)
+            path = min(candidates, key=lambda p: (_path_cost(p), len(p)))
             for p1, p2 in zip(path, path[1:]):
-                _place_segment(p1, p2, net_item)
+                _place_segment(p1, p2, net_name, net_item)
 
     rows = max(1, -(-len(placeable) // cols))
     # components span [MARGIN, MARGIN + (n-1)*PITCH] on each axis, so a board
@@ -282,7 +355,8 @@ def build_pcb(sch_path: Path, out_pcb_path: Path) -> dict:
     pcbnew.SaveBoard(str(out_pcb_path), board)
 
     return {
-        "pads": pads_by_ref,
+        "pads": all_pads,
+        "tracks": track_manifest,
         "board_size_mm": {"width": board_width_mm, "height": board_height_mm},
         "board_thickness_mm": BOARD_THICKNESS_MM,
     }

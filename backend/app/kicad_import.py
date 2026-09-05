@@ -1,10 +1,14 @@
-"""Importing test points from real KiCad source (see repo CLAUDE.md).
+"""Importing probe geometry from real KiCad source (see repo CLAUDE.md).
 
-Net identity (which net a TP-prefixed ref sits on) comes from kicad-cli's XML
-netlist export -- this is what replaces the old label/geometry-proximity guessing
-that produced mismapped test points. Placement (x/y, in mm, sheet coordinates)
-comes from the raw .kicad_sch symbol placement directly, since the XML netlist
-doesn't carry schematic geometry.
+Milestone 8 (probe placement anywhere): generalizes what used to be TP-only
+extraction to every pin of every component, plus every wire segment -- a
+probe should be placeable on any pin or anywhere along a wire, not just at a
+dedicated TestPoint symbol. Net identity for a pin comes from kicad-cli's XML
+netlist export, same as before. Net identity for a *wire* segment isn't in
+that XML at all (it only lists pins), so it's derived here: union-find over
+wire endpoints groups wires into connected regions, and a region's net is
+whichever pin's exact position falls in it -- exact-coordinate matching only,
+the same "no proximity-guessing" principle this importer has always used.
 """
 import re
 import subprocess
@@ -16,6 +20,8 @@ from . import devices
 
 AT_RE = re.compile(r"\(at ([-\d.]+) ([-\d.]+) ([-\d.]+)\)")
 REFERENCE_RE = re.compile(r'\(property "Reference" "([^"]+)"')
+
+Point = tuple[float, float]
 
 
 class KicadCliError(Exception):
@@ -36,28 +42,52 @@ def export_netlist_xml(sch_path: Path) -> str:
         return out_path.read_text()
 
 
-def resolve_testpoint_nets(netlist_xml: str) -> dict[str, str]:
-    """Map each TP-prefixed ref to its net name, normalizing KiCad's conventions
-    to match the SPICE node names used in circuit.cir: a leading "/" (KiCad's
-    sheet-path prefix for local labels) is stripped, and the power-symbol net
-    "GND" is mapped to ngspice's ground node "0" -- both are universal SPICE/KiCad
-    conventions, not per-device net names, so this doesn't run afoul of the
-    "never hardcode canonical net names per device" rule.
-    """
+def resolve_all_pin_nets(netlist_xml: str) -> dict[tuple[str, str], str]:
+    """(ref, pin_number) -> net name, for every pin in the design. Normalizes
+    KiCad's conventions to match circuit.cir's SPICE node names: a leading
+    "/" (KiCad's sheet-path prefix for local labels) is stripped, and the
+    power-symbol net "GND" is mapped to ngspice's ground node "0" -- both are
+    universal SPICE/KiCad conventions, not per-device net names."""
     root = ET.fromstring(netlist_xml)
-    net_by_ref: dict[str, str] = {}
+    result: dict[tuple[str, str], str] = {}
     nets = root.find("nets")
     if nets is None:
-        return net_by_ref
+        return result
     for net in nets:
         name = net.get("name", "").lstrip("/")
         if name == "GND":
             name = "0"
         for node in net:
-            ref = node.get("ref", "")
-            if ref.startswith("TP"):
-                net_by_ref[ref] = name
-    return net_by_ref
+            result[(node.get("ref", ""), node.get("pin", ""))] = name
+    return result
+
+
+def _iter_paren_blocks(text: str, tag: str):
+    """Yield each balanced '(tag ...)' block found in text, at whatever
+    nesting depth it first appears -- once a block is matched, the scan
+    resumes just past its closing paren, so anything nested *inside* it
+    (e.g. a symbol's own sub-unit blocks) is never yielded separately."""
+    marker = f"({tag}"
+    i = 0
+    while True:
+        idx = text.find(marker, i)
+        if idx == -1:
+            return
+        after = idx + len(marker)
+        if after < len(text) and text[after] not in " \t\n)":
+            i = idx + 1  # e.g. "(pin_numbers" must not match tag "pin"
+            continue
+        depth, j = 0, idx
+        while True:
+            if text[j] == "(":
+                depth += 1
+            elif text[j] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        yield text[idx : j + 1]
+        i = j + 1
 
 
 def _top_level_blocks(sch_text: str):
@@ -74,50 +104,139 @@ def _top_level_blocks(sch_text: str):
             depth -= 1
 
 
-def parse_symbol_placements(sch_text: str) -> dict[str, tuple[float, float]]:
-    """Map each TP-prefixed ref to its (x_mm, y_mm) placement, read directly from
-    the schematic's own symbol instances (not the lib_symbols cache)."""
-    placements: dict[str, tuple[float, float]] = {}
+def parse_lib_pin_offsets(sch_text: str) -> dict[str, dict[str, Point]]:
+    """lib_id -> {pin_number: (dx, dy)} at rotation 0, read from the
+    schematic's own embedded lib_symbols cache (not a system library file --
+    this is what makes it work for any symbol type without hardcoding a
+    per-type geometry table). Only rotation 0 is implemented for the
+    *instance* transform (see parse_all_symbol_instances); every FaultFinder
+    device places every symbol unrotated, so this is untested/unverified for
+    a rotated instance, not merely "assumed fine"."""
+    lib_symbols_match = next(_iter_paren_blocks(sch_text, "lib_symbols"), None)
+    if lib_symbols_match is None:
+        return {}
+
+    result: dict[str, dict[str, Point]] = {}
+    for block in _iter_paren_blocks(lib_symbols_match, "symbol"):
+        id_match = re.match(r'\(symbol "([^"]+)"', block)
+        if not id_match or ":" not in id_match.group(1):
+            continue  # skip nested unit/style sub-symbols (e.g. "R_0_1"), which never carry a library prefix
+        pins: dict[str, Point] = {}
+        for pin_block in _iter_paren_blocks(block, "pin"):
+            at_match = re.search(r"\(at ([-\d.]+) ([-\d.]+)", pin_block)
+            num_match = re.search(r'\(number "([^"]+)"', pin_block)
+            if at_match and num_match:
+                pins[num_match.group(1)] = (float(at_match.group(1)), float(at_match.group(2)))
+        if pins:
+            result[id_match.group(1)] = pins
+    return result
+
+
+def parse_all_symbol_instances(sch_text: str) -> list[dict]:
+    """Every placed symbol instance (ref, lib_id, x, y, rotation) -- this is
+    parse_symbol_placements generalized from TP-only to every component."""
+    instances = []
     for block in _top_level_blocks(sch_text):
         if not block.startswith("(symbol") or "(lib_id" not in block:
             continue
+        lib_match = re.search(r'\(lib_id "([^"]+)"\)', block)
         ref_match = REFERENCE_RE.search(block)
         at_match = AT_RE.search(block)
-        if not ref_match or not at_match:
+        if not (lib_match and ref_match and at_match):
             continue
-        ref = ref_match.group(1)
-        if not ref.startswith("TP"):
-            continue
-        placements[ref] = (float(at_match.group(1)), float(at_match.group(2)))
-    return placements
+        instances.append({
+            "ref": ref_match.group(1),
+            "lib_id": lib_match.group(1),
+            "x": float(at_match.group(1)),
+            "y": float(at_match.group(2)),
+            "rotation": float(at_match.group(3)),
+        })
+    return instances
 
 
-def parse_testpoints(netlist_xml: str, sch_text: str) -> list[dict]:
-    nets = resolve_testpoint_nets(netlist_xml)
-    placements = parse_symbol_placements(sch_text)
-
-    missing = set(nets) ^ set(placements)
-    if missing:
-        raise ValueError(f"testpoint refs disagree between netlist and schematic: {sorted(missing)}")
-
-    testpoints = []
-    for ref in sorted(nets):
-        node = nets[ref]
-        x_mm, y_mm = placements[ref]
-        testpoints.append(
-            {
-                "tp_id": ref,
-                "label": f"{ref} ({node})",
-                "node": node,
-                "x_mm": x_mm,
-                "y_mm": y_mm,
-            }
-        )
-    return testpoints
+def _rotate(dx: float, dy: float, angle_deg: float) -> Point:
+    angle = round(angle_deg) % 360
+    if angle == 90:
+        return -dy, dx
+    if angle == 180:
+        return -dx, -dy
+    if angle == 270:
+        return dy, -dx
+    return dx, dy  # 0, or an unsupported angle -- see parse_lib_pin_offsets
 
 
-def import_testpoints(device_id: str) -> list[dict]:
+def parse_wires(sch_text: str) -> list[tuple[Point, Point]]:
+    wires = []
+    for block in _iter_paren_blocks(sch_text, "wire"):
+        pts = re.findall(r"\(xy ([-\d.]+) ([-\d.]+)\)", block)
+        if len(pts) == 2:
+            (x1, y1), (x2, y2) = pts
+            wires.append(((float(x1), float(y1)), (float(x2), float(y2))))
+    return wires
+
+
+class _UnionFind:
+    def __init__(self):
+        self.parent: dict[Point, Point] = {}
+
+    def find(self, x: Point) -> Point:
+        self.parent.setdefault(x, x)
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]
+            x = self.parent[x]
+        return x
+
+    def union(self, a: Point, b: Point):
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            self.parent[ra] = rb
+
+
+def resolve_wire_nets(wires: list[tuple[Point, Point]], pin_positions: dict[Point, str]) -> list[dict]:
+    """Groups wire segments into connected regions (sharing endpoints) and
+    labels each with the net name of whichever pin sits at one of its
+    points -- exact-coordinate matching, not proximity."""
+    uf = _UnionFind()
+    for p1, p2 in wires:
+        uf.union(p1, p2)
+
+    net_by_root: dict[Point, str] = {}
+    for pos, net in pin_positions.items():
+        net_by_root[uf.find(pos)] = net
+
+    segments = []
+    for p1, p2 in wires:
+        net = net_by_root.get(uf.find(p1))
+        if net is not None:
+            segments.append({"node": net, "x1_mm": p1[0], "y1_mm": p1[1], "x2_mm": p2[0], "y2_mm": p2[1]})
+    return segments
+
+
+def import_probe_geometry(device_id: str) -> dict:
+    """Returns every pin (ref, pin number, node, x/y) and every wire segment
+    (node, endpoints) in the device's schematic -- the full set of places a
+    probe can land, not just TP-prefixed refs."""
     sch_path = devices.device_dir(device_id) / f"{device_id}.kicad_sch"
     netlist_xml = export_netlist_xml(sch_path)
     sch_text = sch_path.read_text()
-    return parse_testpoints(netlist_xml, sch_text)
+
+    pin_nets = resolve_all_pin_nets(netlist_xml)
+    lib_pin_offsets = parse_lib_pin_offsets(sch_text)
+    instances = parse_all_symbol_instances(sch_text)
+
+    pins = []
+    pin_positions: dict[Point, str] = {}
+    for inst in instances:
+        offsets = lib_pin_offsets.get(inst["lib_id"], {})
+        for pin_num, (dx, dy) in offsets.items():
+            net = pin_nets.get((inst["ref"], pin_num))
+            if net is None:
+                continue
+            rdx, rdy = _rotate(dx, dy, inst["rotation"])
+            x, y = inst["x"] + rdx, inst["y"] + rdy
+            pins.append({"ref": inst["ref"], "pin": pin_num, "node": net, "x_mm": x, "y_mm": y})
+            pin_positions[(x, y)] = net
+
+    wire_segments = resolve_wire_nets(parse_wires(sch_text), pin_positions)
+
+    return {"pins": pins, "wires": wire_segments}

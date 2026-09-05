@@ -52,12 +52,26 @@ def test_build_pcb_places_every_testpoint_for_all_devices(device_id, tp_ids, tmp
     script, with zero device-specific code."""
     manifest = _run_build_pcb(device_id, tmp_path)
 
-    assert set(manifest["pads"].keys()) == set(tp_ids)
-    for tp_id in tp_ids:
-        pad = manifest["pads"][tp_id]
+    tp_refs = {p["ref"] for p in manifest["pads"] if p["ref"].startswith("TP")}
+    assert tp_refs == set(tp_ids)
+    for pad in manifest["pads"]:
+        if pad["ref"] not in tp_ids:
+            continue
         assert 0 <= pad["x_mm"] <= manifest["board_size_mm"]["width"]
         assert 0 <= pad["y_mm"] <= manifest["board_size_mm"]["height"]
     assert manifest["board_thickness_mm"] > 0
+
+
+@requires_kicad
+@requires_pcbnew
+def test_build_pcb_manifest_has_a_pad_for_every_component_pin_not_just_tp(tmp_path):
+    """Milestone 8 (probe anywhere): every pin of every component is a real
+    probe point now, not just TP-ref pads."""
+    manifest = _run_build_pcb("voltage_divider_01", tmp_path)
+    refs = {p["ref"] for p in manifest["pads"]}
+    assert refs == {"R1", "R2", "TP1", "TP2", "TP3"}  # V1 excluded -- see the SPICE-only test below
+    r1_pins = {p["pin"] for p in manifest["pads"] if p["ref"] == "R1"}
+    assert r1_pins == {"1", "2"}
 
 
 def _orient(a, b, c):
@@ -126,6 +140,5 @@ def test_build_pcb_has_no_same_layer_cross_net_track_crossings(device_id, tmp_pa
 def test_build_pcb_skips_spice_only_simulation_symbols(tmp_path):
     manifest = _run_build_pcb("voltage_divider_01", tmp_path)
     # V1 is a Simulation_SPICE VDC source, not a real PCB part -- must not
-    # produce a pad entry (it isn't a TP either, so this also guards against
-    # accidentally treating it as one).
-    assert "V1" not in manifest["pads"]
+    # produce a pad entry.
+    assert not any(p["ref"] == "V1" for p in manifest["pads"])

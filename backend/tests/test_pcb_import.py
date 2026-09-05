@@ -22,14 +22,15 @@ requires_pcbnew = pytest.mark.skipif(
 
 @requires_kicad
 @requires_pcbnew
-def test_import_pcb_writes_kicad_pcb_and_glb_and_returns_testpoint_pads():
+def test_import_pcb_writes_kicad_pcb_and_glb_and_returns_every_pad():
     manifest = pcb_import.import_pcb("voltage_divider_01")
 
     device_dir = devices.device_dir("voltage_divider_01")
     assert (device_dir / "voltage_divider_01.kicad_pcb").exists()
     assert (device_dir / "pcb.glb").exists()
 
-    assert set(manifest["pads"].keys()) == {"TP1", "TP2", "TP3"}
+    tp_refs = {p["ref"] for p in manifest["pads"] if p["ref"].startswith("TP")}
+    assert tp_refs == {"TP1", "TP2", "TP3"}
     assert manifest["board_size_mm"]["width"] > 0
     assert manifest["board_size_mm"]["height"] > 0
 
