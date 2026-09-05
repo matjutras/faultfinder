@@ -1,5 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { pcbCameraFraming, pcbHitTargetWorldRadius, pcbMmToThreeVec3 } from './kicadCoords';
+import { pcbCameraFraming, pcbHitTargetWorldRadius, pcbMmToThreeVec3, schematicMmToPixels } from './kicadCoords';
+
+describe('schematicMmToPixels', () => {
+  // Regression test: with the schematic container at its old 500x354px (a
+  // ~3.2px/mm scale against the 100x110mm page), two TP markers needed
+  // >13.6mm of real-world separation just for their 44px CSS tap targets not
+  // to visually overlap -- every device's actual spacing (driven by real
+  // component/pin geometry, 7.6-12.7mm) fell short somewhere. Confirmed by
+  // measuring real rendered marker bounding boxes for pairwise overlap
+  // across all 5 devices, not by eyeballing one screenshot. Fixed by
+  // enlarging the container to 800x880 (~8px/mm) instead of re-cramming
+  // every schematic's layout a second time -- this locks in that the
+  // render scale itself gives enough headroom for a realistic tight gap.
+  it('gives at least a 44px tap-target\'s worth of separation for a realistic tight TP gap', () => {
+    const CONTAINER_WIDTH = 800;
+    const CONTAINER_HEIGHT = 880;
+    const TIGHT_GAP_MM = 7.62; // the actual tightest gap seen in a real device (transistor_switch_04)
+
+    const a = schematicMmToPixels(50, 40, CONTAINER_WIDTH, CONTAINER_HEIGHT);
+    const b = schematicMmToPixels(50, 40 + TIGHT_GAP_MM, CONTAINER_WIDTH, CONTAINER_HEIGHT);
+
+    expect(Math.abs(b.y - a.y)).toBeGreaterThanOrEqual(44);
+  });
+});
 
 describe('pcbMmToThreeVec3', () => {
   it('maps board mm to meters with NO axis flip -- kicad-cli glb export already bakes this', () => {

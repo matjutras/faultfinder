@@ -8,8 +8,16 @@ import { toggleProbe, visibleResult } from './probeSelection';
 import './SchematicProbeView.css';
 import type { Device, MeasureResult } from './types';
 
-const SCHEMATIC_WIDTH = 500;
-const SCHEMATIC_HEIGHT = 354;
+// At the old 500x354 (~3.2px/mm against the 100x110mm page), adjacent TP
+// markers needed >13.6mm of separation just for their 44px tap targets not
+// to overlap -- every device's real spacing (7.6-12.7mm, driven by realistic
+// component/pin geometry) fell short somewhere, confirmed by measuring
+// actual rendered marker bounding boxes for pairwise overlap, not by
+// eyeballing it. 800x880 (~8px/mm) only needs 5.5mm of separation, clearing
+// every device's tightest gap with margin -- fixing this at the render
+// scale, not by re-cramming every schematic's layout a second time.
+const SCHEMATIC_WIDTH = 800;
+const SCHEMATIC_HEIGHT = 880;
 const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard', 'random'];
 
 interface Props {
