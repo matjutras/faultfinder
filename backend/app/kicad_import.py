@@ -42,12 +42,52 @@ def export_netlist_xml(sch_path: Path) -> str:
         return out_path.read_text()
 
 
+_UNSAFE_NODE_CHAR_RE = re.compile(r"[^A-Za-z0-9_]")
+
+
+def sanitize_spice_node_name(name: str) -> str:
+    """KiCad auto-names any net with no explicit label "Net-(REF-PIN)", and a
+    real board is free to use a net label like "+VE" -- both common on a
+    real, professionally-routed board where nets are largely unlabeled or
+    labeled by a different designer's own convention (unlike this project's
+    own hand-authored devices, which always hand-pick a clean alnum label).
+    Two independent things in this app's pipeline choke on that:
+
+    - ngspice's own tokenizer treats a bare "(" as the start of a
+      controlled-source node-group and silently miscounts the rest of the
+      line, breaking a raw "Net-(D1-A)" node. kicad-cli's own SPICE netlist
+      exporter hit the same problem for the same reason and also substitutes
+      "_" for the parens (confirmed against its output for a real imported
+      board) -- this sanitizes more aggressively than that (every character
+      outside [A-Za-z0-9_], not just parens), so the two won't always agree
+      character-for-character on a given net name.
+    - spice_runner.py's own op-voltage parser (NODE_VOLTAGE_RE) requires a
+      node name to start with a letter or underscore, so a raw "+VE" node's
+      voltage is silently never captured (not a parse error -- the line is
+      just skipped, so /measure would report 0V for a real, live node).
+
+    Sanitizing every character outside [A-Za-z0-9_] here covers both, plus
+    whatever other punctuation the next real board's own net labels use --
+    not just the two cases actually hit so far. "0" is passed through as-is:
+    it's ngspice's own universal ground node (already the result of this
+    same caller's GND -> "0" mapping), not a name that starts with a digit
+    by accident."""
+    if name == "0":
+        return name
+    name = _UNSAFE_NODE_CHAR_RE.sub("_", name)
+    if name and name[0].isdigit():
+        name = f"N_{name}"
+    return name
+
+
 def resolve_all_pin_nets(netlist_xml: str) -> dict[tuple[str, str], str]:
     """(ref, pin_number) -> net name, for every pin in the design. Normalizes
     KiCad's conventions to match circuit.cir's SPICE node names: a leading
-    "/" (KiCad's sheet-path prefix for local labels) is stripped, and the
-    power-symbol net "GND" is mapped to ngspice's ground node "0" -- both are
-    universal SPICE/KiCad conventions, not per-device net names."""
+    "/" (KiCad's sheet-path prefix for local labels) is stripped, the
+    power-symbol net "GND" is mapped to ngspice's ground node "0", and any
+    character unsafe in a raw SPICE node name is sanitized (see
+    sanitize_spice_node_name) -- all universal SPICE/KiCad conventions, not
+    per-device net names."""
     root = ET.fromstring(netlist_xml)
     result: dict[tuple[str, str], str] = {}
     nets = root.find("nets")
@@ -57,6 +97,7 @@ def resolve_all_pin_nets(netlist_xml: str) -> dict[tuple[str, str], str]:
         name = net.get("name", "").lstrip("/")
         if name == "GND":
             name = "0"
+        name = sanitize_spice_node_name(name)
         for node in net:
             result[(node.get("ref", ""), node.get("pin", ""))] = name
     return result

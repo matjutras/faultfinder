@@ -30,6 +30,21 @@ devices/*/*.kicad_pcb
 devices/*/*.kicad_pro
 devices/*/*.kicad_prl
 
+# Real-world imported devices are the opposite of the rules just above: their
+# .kicad_pcb (and .kicad_pro, when the source repo ships one) is the actual
+# professionally-routed board from the source repo -- re-anchored to (0,0) by
+# import_real_pcb.py, but otherwise untouched -- not something build_pcb.py
+# auto-places from the schematic, so it's committed source, like the
+# .kicad_sch. See each such device's NOTICE.md and CLAUDE.md's "Real-world
+# imported devices" section. Un-ignored per device, not globally, so a
+# *hand-authored* device's .kicad_pcb still defaults to generated/ignored.
+# .kicad_prl stays ignored even for these -- pcbnew regenerates it as pure
+# editor-state (active layer, opacity, selection filter) every time
+# import_real_pcb.py loads/saves the board, so it's never real source here
+# either.
+!devices/bridge_rectifier_06/*.kicad_pcb
+!devices/bridge_rectifier_06/*.kicad_pro
+
 # Editors / OS
 .vscode/
 .DS_Store

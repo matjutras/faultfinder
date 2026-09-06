@@ -26,6 +26,64 @@ devices/<device_id>/
 
 `map.json`'s pins/wires/pads/tracks are derived generically for *every* component and net (milestone 8) — not just `TP`-prefixed refs, though those still exist as dedicated test points for a device that wants labeled points. **Never hardcode canonical net names per device** (e.g. `"/Vin" → "VIN"`); that only works for one board and silently produces nothing for every other device.
 
+### Real-world imported devices
+
+Some devices (`bridge_rectifier_06` on) are real open-source KiCad boards
+imported as-is, not hand-authored toy circuits — the point being that a
+professionally laid-out and routed board fixes the placement/routing/realism
+problems a from-scratch schematic + `build_pcb.py`'s auto-placement kept
+running into. They differ from hand-authored devices in a few ways:
+
+- `NOTICE.md` in the device's own folder records the exact source repo URL,
+  commit/date, and license (quote the actual license text or file, not just
+  "MIT" from memory) plus any attribution the license requires. `LICENSE` is
+  a verbatim copy of the source repo's license file.
+- The `.kicad_sch`/`.kicad_pcb` (and `.kicad_pro`, if the source repo ships
+  one) are the *real* files from the source repo, renamed to
+  `<device_id>.*` — never re-laid-out by `backend/scripts/build_pcb.py`,
+  which would throw away the real routing that's the entire point of
+  importing this board. `backend/app/pcb_import.py` detects a real-imported
+  device generically (a `NOTICE.md` in its folder, not a hardcoded device-id
+  list) and routes it to `backend/scripts/import_real_pcb.py` instead of
+  `build_pcb.py`: that script re-anchors the board's whole coordinate origin
+  to (0,0) (a real board's own absolute page position essentially never
+  starts there, unlike a hand-authored device's) via a pure `board.Move()` —
+  relative placement/routing is untouched, just re-anchored — then reads
+  pads/tracks/board size/thickness straight off the real board (see its own
+  docstring for the net-name-normalization details this shares with
+  `kicad_import.py`). `.gitignore` un-ignores the `.kicad_pcb`/`.kicad_pro`
+  per device (see its own comment) since they're committed source here,
+  unlike a hand-authored device's auto-placed `.kicad_pcb` — `.kicad_prl`
+  stays ignored even for these, since pcbnew regenerates it as pure
+  editor-state every time `import_real_pcb.py` loads/saves the board.
+  A real board's ground net is commonly a filled copper zone/pour rather
+  than discrete traces — every pad on it is still individually probeable,
+  but there's no pour-polygon hit-testing, matching this project's PCB view
+  never having supported zones at all.
+- `circuit.cir` is still hand-authored (same as every device), because a real
+  board's off-board connections (mains AC, a transformer secondary, a battery)
+  aren't KiCad symbols with SPICE models in the source schematic — model them
+  with an equivalent DC/simplified source at that connector, like every other
+  device already does at its own input, and say so in `NOTICE.md`. Get net
+  names by actually running `kicad-cli sch export netlist --format kicadxml`
+  against the real schematic, per this file's own rule above — a real board's
+  unlabeled nets come back as KiCad's auto-generated `Net-(REF-PIN)`-style
+  names (not clean hand-picked labels like the hand-authored devices'), and
+  `kicad_import.py`'s `sanitize_spice_node_name` makes those SPICE-safe.
+- Every part must have a genuinely usable SPICE model before the board is
+  accepted — ngspice's own generic default model (`.model X D` / `.model X
+  NPN`, no parameters) is fine for a plain diode/BJT, same bar the
+  hand-authored devices already use, but a 3-terminal IC (a linear regulator,
+  an op-amp, an audio power amp) needs a *real* subckt model, sourced from
+  somewhere with clear reuse terms and verified against a real ngspice run
+  before the board is accepted, not fabricated. If no such model exists for a
+  part on an otherwise-good real board, reject the board rather than
+  approximate the part — regulator ICs (LM317/LM7805/AMS1117/LM337) hit this
+  wall repeatedly when this device category was first built: vendor PSpice
+  models exist but are typically encrypted-for-PSpice or gated behind a
+  non-redistributable web form, and community-shared alternatives found on
+  forums lacked clear licensing.
+
 ## Fault types
 
 `open_pin`, `short_to_ground`, `short_to_vcc`, `short_between_nodes`, `component_change` (value drift), `component_failed`, `intermittent`. Auto-generate a default fault pool per device from each component's ref prefix (R→open, C→short+open, D→open+short, L→open, Q→junction-open or leaky-short, U/IC→single-pin-open), applied as a `patch` list against a copy of `circuit.cir` — the schematic/PCB the user sees never changes, only what the probes read back.

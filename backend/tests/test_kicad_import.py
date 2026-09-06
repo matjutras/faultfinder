@@ -57,6 +57,38 @@ def test_resolve_all_pin_nets_covers_every_ref_not_just_testpoints():
     }
 
 
+def test_resolve_all_pin_nets_sanitizes_parens_in_auto_generated_net_names():
+    # KiCad auto-names an unlabeled net "Net-(REF-PIN)" -- common on a real
+    # imported board where not every net is hand-labeled. Bare parens break
+    # ngspice's tokenizer (it treats "(" as a controlled-source node-group),
+    # so they must come out sanitized, matching kicad-cli's own SPICE
+    # exporter's fix for the identical problem.
+    xml = """<?xml version="1.0"?>
+    <export>
+      <nets>
+        <net code="1" name="Net-(D1-A)"><node ref="D1" pin="2"/></net>
+      </nets>
+    </export>"""
+    nets = kicad_import.resolve_all_pin_nets(xml)
+    assert nets == {("D1", "2"): "Net__D1_A_"}
+
+
+def test_resolve_all_pin_nets_sanitizes_a_leading_plus_in_a_real_net_label():
+    # A real board's own net label ("+VE") isn't ngspice-unsafe like a bare
+    # paren, but spice_runner.py's NODE_VOLTAGE_RE requires a node name to
+    # start with a letter or underscore -- a raw "+VE" node's voltage would
+    # be silently never captured from ngspice's `print all` output, so
+    # /measure would report 0V for a real, live node instead of erroring.
+    xml = """<?xml version="1.0"?>
+    <export>
+      <nets>
+        <net code="1" name="/+VE"><node ref="R1" pin="1"/></net>
+      </nets>
+    </export>"""
+    nets = kicad_import.resolve_all_pin_nets(xml)
+    assert nets == {("R1", "1"): "_VE"}
+
+
 def test_parse_lib_pin_offsets_reads_real_device_symbol_geometry():
     sch_text = """(kicad_sch
 \t(lib_symbols

@@ -1,0 +1,16 @@
+* AC-to-DC Bridge Rectifier - FaultFinder device bridge_rectifier_06
+* Real board (see NOTICE.md) takes AC from an external transformer at J1;
+* modeled here as an equivalent DC source, same simplification every other
+* device in this project makes at its own input.
+V1 Net__D3_A_ Net__D1_A_ DC 12
+D1 Net__D1_A_ _VE DMOD
+D2 0 Net__D1_A_ DMOD
+D3 Net__D3_A_ _VE DMOD
+D4 0 Net__D3_A_ DMOD
+C1 _VE 0 1000u
+R1 _VE 0 10k
+R2 _VE Net__D5_A_ 2.2k
+D5 Net__D5_A_ 0 LEDMOD
+.model DMOD D
+.model LEDMOD D
+.end

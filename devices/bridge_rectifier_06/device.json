@@ -1,0 +1,5 @@
+{
+  "id": "bridge_rectifier_06",
+  "name": "AC-to-DC Bridge Rectifier",
+  "schematic_sch": "bridge_rectifier_06.kicad_sch"
+}
