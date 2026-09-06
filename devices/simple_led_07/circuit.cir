@@ -1,0 +1,18 @@
+* Simple LED Board - FaultFinder device simple_led_07
+* Real board (see NOTICE.md) takes power from an off-board 2-pin screw
+* terminal (J1), which isn't a SPICE-modelable symbol in the source
+* schematic; modeled here as an equivalent DC source, same simplification
+* every other device in this project makes at its own power input.
+V1 Net__J1_Pin_1_ 0 DC 9
+R1 Net__J1_Pin_1_ Net__D1_A_ 56
+R2 Net__J1_Pin_1_ Net__D2_A_ 56
+R3 Net__J1_Pin_1_ Net__D3_A_ 56
+R4 Net__J1_Pin_1_ Net__D4_A_ 56
+R5 Net__J1_Pin_1_ Net__D5_A_ 56
+D1 Net__D1_A_ 0 LEDMOD
+D2 Net__D2_A_ 0 LEDMOD
+D3 Net__D3_A_ 0 LEDMOD
+D4 Net__D4_A_ 0 LEDMOD
+D5 Net__D5_A_ 0 LEDMOD
+.model LEDMOD D
+.end

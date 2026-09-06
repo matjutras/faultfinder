@@ -191,7 +191,12 @@ export function PcbProbeView({ deviceId, onGuess = () => {} }: Props) {
                 testId="lead-black"
               />
             )}
-            <OrbitControls target={framing.target} minPolarAngle={0.15} maxPolarAngle={1.45} zoomToCursor />
+            <OrbitControls
+              target={framing.target}
+              minPolarAngle={0.05}
+              maxPolarAngle={Math.PI - 0.05}
+              zoomToCursor
+            />
           </Canvas>
         </div>
         <Multimeter

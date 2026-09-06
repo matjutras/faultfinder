@@ -44,6 +44,8 @@ devices/*/*.kicad_prl
 # either.
 !devices/bridge_rectifier_06/*.kicad_pcb
 !devices/bridge_rectifier_06/*.kicad_pro
+!devices/simple_led_07/*.kicad_pcb
+!devices/simple_led_07/*.kicad_pro
 
 # Editors / OS
 .vscode/

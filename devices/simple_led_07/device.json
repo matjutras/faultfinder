@@ -1,0 +1,5 @@
+{
+  "id": "simple_led_07",
+  "name": "Five-LED Indicator Array",
+  "schematic_sch": "simple_led_07.kicad_sch"
+}
