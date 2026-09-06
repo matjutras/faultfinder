@@ -10,6 +10,8 @@ const DEVICE: Device = {
   id: 'voltage_divider_01',
   name: 'Simple Voltage Divider',
   schematic_sch: 'voltage_divider_01.kicad_sch',
+  page_width_mm: 100,
+  page_height_mm: 110,
   pins: [
     { ref: 'TP1', pin: '1', node: 'VIN', x_mm: 50, y_mm: 20 },
     { ref: 'TP2', pin: '1', node: 'VOUT', x_mm: 50, y_mm: 40 },

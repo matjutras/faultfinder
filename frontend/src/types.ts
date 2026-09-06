@@ -54,6 +54,8 @@ export interface Device {
   pcb_pads: PcbPad[];
   pcb_tracks: PcbTrack[];
   faults: Fault[];
+  page_width_mm: number;
+  page_height_mm: number;
   board_size_mm?: { width: number; height: number };
   board_thickness_mm?: number;
   pcb_glb?: string;

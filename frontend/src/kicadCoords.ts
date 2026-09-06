@@ -1,23 +1,31 @@
-// Every device's .kicad_sch declares a custom `(paper "User" 100 110)` sheet
-// (100mm x 110mm) instead of A4 -- a full A4 page around a 3-5 component
-// teaching circuit left the actual symbols tiny relative to the fixed-size
-// TP marker overlay; a page sized to the content makes the same symbols
-// occupy far more of the rendered viewport. Confirmed against a real
-// KiCanvas render, not assumed. `controls="none"` fits the whole page into
-// its container (letterboxed, centered), so this is a plain "object-fit:
-// contain" transform -- must match every device's own paper size exactly.
-const PAGE_WIDTH_MM = 100;
-const PAGE_HEIGHT_MM = 110;
+// Every hand-authored device's .kicad_sch declares a custom `(paper "User"
+// 100 110)` sheet (100mm x 110mm) instead of a standard size -- a full A4
+// page around a 3-5 component teaching circuit left the actual symbols tiny
+// relative to the fixed-size TP marker overlay; a page sized to the content
+// makes the same symbols occupy far more of the rendered viewport. Confirmed
+// against a real KiCanvas render, not assumed. `controls="none"` fits the
+// whole page into its container (letterboxed, centered), so this is a plain
+// "object-fit: contain" transform -- must match the device's own paper size
+// exactly, which is NOT universally 100x110: a real-world imported device
+// (e.g. bridge_rectifier_06) declares a plain standard sheet like "A4"
+// instead, so callers pass the device's own page size (from the API,
+// ultimately backend/app/kicad_import.py's parse_page_size_mm) rather than
+// relying on these defaults, which exist only for the hand-authored devices'
+// convention and as a fallback for a pre-page-size-field cached map.json.
+const DEFAULT_PAGE_WIDTH_MM = 100;
+const DEFAULT_PAGE_HEIGHT_MM = 110;
 
 export function schematicMmToPixels(
   xMm: number,
   yMm: number,
   containerWidth: number,
   containerHeight: number,
+  pageWidthMm: number = DEFAULT_PAGE_WIDTH_MM,
+  pageHeightMm: number = DEFAULT_PAGE_HEIGHT_MM,
 ): { x: number; y: number } {
-  const scale = Math.min(containerWidth / PAGE_WIDTH_MM, containerHeight / PAGE_HEIGHT_MM);
-  const offsetX = (containerWidth - PAGE_WIDTH_MM * scale) / 2;
-  const offsetY = (containerHeight - PAGE_HEIGHT_MM * scale) / 2;
+  const scale = Math.min(containerWidth / pageWidthMm, containerHeight / pageHeightMm);
+  const offsetX = (containerWidth - pageWidthMm * scale) / 2;
+  const offsetY = (containerHeight - pageHeightMm * scale) / 2;
   return { x: offsetX + xMm * scale, y: offsetY + yMm * scale };
 }
 

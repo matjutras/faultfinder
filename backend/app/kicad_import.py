@@ -20,8 +20,52 @@ from . import devices
 
 AT_RE = re.compile(r"\(at ([-\d.]+) ([-\d.]+) ([-\d.]+)\)")
 REFERENCE_RE = re.compile(r'\(property "Reference" "([^"]+)"')
+PAPER_RE = re.compile(r'\(paper "([^"]+)"([^)]*)\)')
 
 Point = tuple[float, float]
+
+DEFAULT_PAGE_SIZE_MM: tuple[float, float] = (100.0, 110.0)  # every hand-authored device's own "(paper "User" 100 110)"
+
+# (portrait width, portrait height) in mm, per KiCad's own standard sheet sizes.
+STANDARD_PAPER_SIZES_MM: dict[str, tuple[float, float]] = {
+    "A5": (148.0, 210.0),
+    "A4": (210.0, 297.0),
+    "A3": (297.0, 420.0),
+    "A2": (420.0, 594.0),
+    "A1": (594.0, 841.0),
+    "A0": (841.0, 1189.0),
+}
+
+
+def parse_page_size_mm(sch_text: str) -> tuple[float, float]:
+    """A real-world imported board declares a plain standard sheet (e.g.
+    "(paper "A4")"), not this project's own hand-authored "(paper "User" 100
+    110)" convention that the schematic-view probe overlay used to assume
+    was universal (kicadCoords.ts's PAGE_WIDTH_MM/PAGE_HEIGHT_MM, hardcoded
+    100x110) -- found because bridge_rectifier_06's real pin coordinates
+    (up to x=129.5mm) don't even fit inside a 100mm-wide page. KiCad's own
+    default orientation for a named standard size, absent an explicit
+    "portrait" keyword, is landscape (width and height swapped from this
+    table, which stores each size portrait-first the way KiCad's own docs
+    do)."""
+    match = PAPER_RE.search(sch_text)
+    if not match:
+        return DEFAULT_PAGE_SIZE_MM
+
+    name, rest = match.group(1), match.group(2)
+    if name == "User":
+        nums = re.findall(r"[\d.]+", rest)
+        if len(nums) == 2:
+            return (float(nums[0]), float(nums[1]))
+        return DEFAULT_PAGE_SIZE_MM
+
+    size = STANDARD_PAPER_SIZES_MM.get(name)
+    if size is None:
+        return DEFAULT_PAGE_SIZE_MM
+    portrait_width, portrait_height = size
+    if "portrait" in rest:
+        return (portrait_width, portrait_height)
+    return (portrait_height, portrait_width)
 
 
 class KicadCliError(Exception):
@@ -256,7 +300,9 @@ def resolve_wire_nets(wires: list[tuple[Point, Point]], pin_positions: dict[Poin
 def import_probe_geometry(device_id: str) -> dict:
     """Returns every pin (ref, pin number, node, x/y) and every wire segment
     (node, endpoints) in the device's schematic -- the full set of places a
-    probe can land, not just TP-prefixed refs."""
+    probe can land, not just TP-prefixed refs -- plus the schematic's own
+    page size in mm (see parse_page_size_mm), which the frontend overlay
+    needs to convert those mm coordinates to pixels correctly."""
     sch_path = devices.device_dir(device_id) / f"{device_id}.kicad_sch"
     netlist_xml = export_netlist_xml(sch_path)
     sch_text = sch_path.read_text()
@@ -279,5 +325,6 @@ def import_probe_geometry(device_id: str) -> dict:
             pin_positions[(x, y)] = net
 
     wire_segments = resolve_wire_nets(parse_wires(sch_text), pin_positions)
+    page_width_mm, page_height_mm = parse_page_size_mm(sch_text)
 
-    return {"pins": pins, "wires": wire_segments}
+    return {"pins": pins, "wires": wire_segments, "page_width_mm": page_width_mm, "page_height_mm": page_height_mm}

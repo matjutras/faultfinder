@@ -70,7 +70,15 @@ export function SchematicProbeView({ deviceId, onGuess = () => {} }: Props) {
     const rect = stage.getBoundingClientRect();
     const localX = clientX - rect.left;
     const localY = clientY - rect.top;
-    const target = resolveSchematicDropTarget(localX, localY, device, SCHEMATIC_WIDTH, SCHEMATIC_HEIGHT);
+    const target = resolveSchematicDropTarget(
+      localX,
+      localY,
+      device,
+      SCHEMATIC_WIDTH,
+      SCHEMATIC_HEIGHT,
+      device.page_width_mm,
+      device.page_height_mm,
+    );
     if (!target) return;
     setLeads((prev) => setLead(prev, color, target));
   }

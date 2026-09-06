@@ -22,6 +22,33 @@ describe('schematicMmToPixels', () => {
 
     expect(Math.abs(b.y - a.y)).toBeGreaterThanOrEqual(44);
   });
+
+  // Regression test: bridge_rectifier_06 (a real-world imported device)
+  // declares a plain "A4" page instead of the hand-authored devices' own
+  // 100x110 custom page, and its real pins go up to x=129.5mm -- past the
+  // old hardcoded default width entirely. Passing the device's own page
+  // size must scale the overlay to match, not silently clip/misplace it.
+  it('scales against an explicit page size instead of the 100x110 default', () => {
+    const CONTAINER_WIDTH = 800;
+    const CONTAINER_HEIGHT = 880;
+    const A4_LANDSCAPE_WIDTH_MM = 297;
+    const A4_LANDSCAPE_HEIGHT_MM = 210;
+
+    const { x, y } = schematicMmToPixels(
+      129.5,
+      49.53,
+      CONTAINER_WIDTH,
+      CONTAINER_HEIGHT,
+      A4_LANDSCAPE_WIDTH_MM,
+      A4_LANDSCAPE_HEIGHT_MM,
+    );
+
+    // scale is min(800/297, 880/210) = min(2.6936, 4.190) = 2.6936, letterboxed vertically
+    const expectedScale = CONTAINER_WIDTH / A4_LANDSCAPE_WIDTH_MM;
+    const expectedOffsetY = (CONTAINER_HEIGHT - A4_LANDSCAPE_HEIGHT_MM * expectedScale) / 2;
+    expect(x).toBeCloseTo(129.5 * expectedScale, 5);
+    expect(y).toBeCloseTo(expectedOffsetY + 49.53 * expectedScale, 5);
+  });
 });
 
 describe('pcbMmToThreeVec3', () => {

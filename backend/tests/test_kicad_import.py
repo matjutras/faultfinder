@@ -28,6 +28,41 @@ def test_import_probe_geometry_resolves_every_pin_not_just_testpoints():
 
 
 @requires_kicad
+def test_import_probe_geometry_reports_the_hand_authored_devices_own_page_size():
+    geo = kicad_import.import_probe_geometry("voltage_divider_01")
+    assert geo["page_width_mm"] == pytest.approx(100.0)
+    assert geo["page_height_mm"] == pytest.approx(110.0)
+
+
+@requires_kicad
+def test_import_probe_geometry_reports_a_real_devices_standard_page_size():
+    # bridge_rectifier_06 is a real-world import declaring plain "(paper
+    # "A4")" -- no explicit width/height like the hand-authored devices'
+    # "(paper "User" 100 110)". Its own pins go up to x=129.5mm, which
+    # wouldn't even fit on a 100mm-wide page, so getting this wrong is a
+    # real, silent probe-placement bug, not just a cosmetic one.
+    geo = kicad_import.import_probe_geometry("bridge_rectifier_06")
+    assert geo["page_width_mm"] == pytest.approx(297.0)  # A4 landscape (no "portrait" keyword present)
+    assert geo["page_height_mm"] == pytest.approx(210.0)
+
+
+def test_parse_page_size_mm_reads_the_hand_authored_convention():
+    assert kicad_import.parse_page_size_mm('(paper "User" 100 110)') == (100.0, 110.0)
+
+
+def test_parse_page_size_mm_defaults_a_standard_size_to_landscape():
+    assert kicad_import.parse_page_size_mm('(paper "A4")') == (297.0, 210.0)
+
+
+def test_parse_page_size_mm_honors_an_explicit_portrait_keyword():
+    assert kicad_import.parse_page_size_mm('(paper "A4" portrait)') == (210.0, 297.0)
+
+
+def test_parse_page_size_mm_falls_back_when_no_paper_directive_is_present():
+    assert kicad_import.parse_page_size_mm("(kicad_sch (version 1))") == kicad_import.DEFAULT_PAGE_SIZE_MM
+
+
+@requires_kicad
 def test_import_probe_geometry_resolves_every_wire_segment_to_its_real_net():
     geo = kicad_import.import_probe_geometry("voltage_divider_01")
     assert len(geo["wires"]) > 0

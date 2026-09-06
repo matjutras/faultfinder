@@ -51,6 +51,14 @@ def get_device(device_id: str):
         device["board_size_mm"] = device_map.get("board_size_mm")
         device["board_thickness_mm"] = device_map.get("board_thickness_mm")
         device["pcb_glb"] = "pcb.glb" if device_map.get("board_size_mm") else None
+        # Real page size the schematic declares (e.g. plain "A4" for a real-
+        # world imported board, not every device's own 100x110 custom page)
+        # -- the frontend's probe-lead overlay needs this to place a lead on
+        # the same point KiCanvas rendered it at. Default matches every
+        # existing hand-authored device for a map.json from before this field
+        # existed.
+        device["page_width_mm"] = device_map.get("page_width_mm", 100.0)
+        device["page_height_mm"] = device_map.get("page_height_mm", 110.0)
         return device
     except devices.DeviceNotFound:
         raise HTTPException(status_code=404, detail="device not found")
@@ -77,6 +85,8 @@ def import_device(device_id: str):
         "wires": geometry["wires"],
         "pcb_pads": pcb_manifest["pads"],
         "pcb_tracks": pcb_manifest["tracks"],
+        "page_width_mm": geometry["page_width_mm"],
+        "page_height_mm": geometry["page_height_mm"],
         "board_size_mm": pcb_manifest["board_size_mm"],
         "board_thickness_mm": pcb_manifest["board_thickness_mm"],
     }, indent=2) + "\n")

@@ -21,11 +21,13 @@ export function resolveSchematicDropTarget(
   device: Pick<Device, 'pins' | 'wires'>,
   containerWidth: number,
   containerHeight: number,
+  pageWidthMm?: number,
+  pageHeightMm?: number,
 ): ProbeTarget | null {
   let best: { target: ProbeTarget; distance: number } | null = null;
 
   for (const p of device.pins) {
-    const { x, y } = schematicMmToPixels(p.x_mm, p.y_mm, containerWidth, containerHeight);
+    const { x, y } = schematicMmToPixels(p.x_mm, p.y_mm, containerWidth, containerHeight, pageWidthMm, pageHeightMm);
     const distance = Math.hypot(localX - x, localY - y);
     if (distance <= PIN_DROP_RADIUS_PX && (!best || distance < best.distance)) {
       best = { target: { targetId: `${p.ref}:${p.pin}`, node: p.node, x, y }, distance };
@@ -35,8 +37,8 @@ export function resolveSchematicDropTarget(
 
   for (let i = 0; i < device.wires.length; i++) {
     const w = device.wires[i];
-    const p1 = schematicMmToPixels(w.x1_mm, w.y1_mm, containerWidth, containerHeight);
-    const p2 = schematicMmToPixels(w.x2_mm, w.y2_mm, containerWidth, containerHeight);
+    const p1 = schematicMmToPixels(w.x1_mm, w.y1_mm, containerWidth, containerHeight, pageWidthMm, pageHeightMm);
+    const p2 = schematicMmToPixels(w.x2_mm, w.y2_mm, containerWidth, containerHeight, pageWidthMm, pageHeightMm);
     const hit = nearestPointOnSegment(localX, localY, { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, node: w.node });
     if (hit.distance <= WIRE_DROP_TOLERANCE_PX && (!best || hit.distance < best.distance)) {
       best = {

@@ -9,6 +9,8 @@ const DEVICE = {
   id: 'voltage_divider_01',
   name: 'Simple Voltage Divider',
   schematic_sch: 'voltage_divider_01.kicad_sch',
+  page_width_mm: 100,
+  page_height_mm: 110,
   pcb_glb: 'pcb.glb',
   board_size_mm: { width: 36, height: 24 },
   board_thickness_mm: 1.51,
