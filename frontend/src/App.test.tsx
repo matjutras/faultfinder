@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 import * as api from './api';
 import { API_BASE } from './api';
-import { dragLeadTo } from './test/dragLead';
+import { placeLead } from './test/placeLead';
 
 const DEVICE = {
   id: 'voltage_divider_01',
@@ -127,8 +127,8 @@ describe('App', () => {
 
     // TP1 (101.6, 81.28mm) and TP2 (101.6, 111.76mm) against the 800x880px
     // stage (8px/mm, jsdom's zero-offset default rect).
-    dragLeadTo('red', 101.6 * 8, 81.28 * 8);
-    dragLeadTo('black', 101.6 * 8, 111.76 * 8);
+    placeLead('red', 101.6 * 8, 81.28 * 8);
+    placeLead('black', 101.6 * 8, 111.76 * 8);
     expect(await screen.findByTestId('multimeter-display')).toHaveTextContent('3.000 V');
 
     await user.selectOptions(screen.getByLabelText('Device:'), OTHER_DEVICE.id);

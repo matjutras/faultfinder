@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from './api';
 import { SchematicProbeView } from './SchematicProbeView';
-import { dragLeadTo } from './test/dragLead';
+import { placeLead } from './test/placeLead';
 import type { Device, MeasureResult } from './types';
 
 const DEVICE: Device = {
@@ -75,8 +75,8 @@ const RESULTS: Record<string, MeasureResult> = {
 };
 
 function placeBothProbes() {
-  dragLeadTo('red', TP1_PX.x, TP1_PX.y); // VIN -> red lead
-  dragLeadTo('black', TP2_PX.x, TP2_PX.y); // VOUT -> black lead
+  placeLead('red', TP1_PX.x, TP1_PX.y); // VIN -> red lead
+  placeLead('black', TP2_PX.x, TP2_PX.y); // VOUT -> black lead
 }
 
 // The same "X.XXX V" text appears in both the multimeter's own display and
@@ -97,7 +97,7 @@ describe('SchematicProbeView', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
   });
 
-  it('shows a readout once two leads are dropped on pins, using a silently-injected fault', async () => {
+  it('shows a readout once two leads are placed on pins, using a silently-injected fault', async () => {
     const measureSpy = vi.spyOn(api, 'measure');
 
     render(<SchematicProbeView deviceId="voltage_divider_01" />);
@@ -141,24 +141,24 @@ describe('SchematicProbeView', () => {
     render(<SchematicProbeView deviceId="voltage_divider_01" />);
 
     await screen.findByText('Simple Voltage Divider');
-    dragLeadTo('red', TP1_PX.x, TP1_PX.y);
+    placeLead('red', TP1_PX.x, TP1_PX.y);
 
     expect(measureSpy).not.toHaveBeenCalled();
   });
 
-  it('a drop that lands nowhere near a pin or wire is ignored', async () => {
+  it('a tap that lands nowhere near a pin or wire is ignored', async () => {
     const measureSpy = vi.spyOn(api, 'measure');
 
     render(<SchematicProbeView deviceId="voltage_divider_01" />);
 
     await screen.findByText('Simple Voltage Divider');
-    dragLeadTo('red', 5, 5); // far from every pin/wire in this fixture
+    placeLead('red', 5, 5); // far from every pin/wire in this fixture
 
-    expect(screen.getByTestId('lead-drag-red')).not.toHaveClass('placed');
+    expect(screen.getByTestId('lead-jack-red')).not.toHaveClass('placed');
     expect(measureSpy).not.toHaveBeenCalled();
   });
 
-  it('does not crash when a lead is re-dragged after a result is shown, and re-measures the new pair', async () => {
+  it('does not crash when a lead is re-placed after a result is shown, and re-measures the new pair', async () => {
     vi.spyOn(api, 'measure').mockImplementation((_deviceId, nodes, faultId) => {
       const volts: Record<string, number> = { VIN: 9, VOUT: 0, '0': 0 };
       const probes = nodes.map((node) => ({ node, volts: volts[node] }));
@@ -176,7 +176,7 @@ describe('SchematicProbeView', () => {
     placeBothProbes(); // VIN (red), VOUT (black)
     await waitForDisplay('9.000 V');
 
-    dragLeadTo('black', TP3_PX.x, TP3_PX.y); // re-drag black onto the third probe: 0 (GND)
+    placeLead('black', TP3_PX.x, TP3_PX.y); // re-place black onto the third probe: 0 (GND)
 
     // must not throw and unmount the component tree
     expect(await screen.findByText('Simple Voltage Divider')).toBeInTheDocument();

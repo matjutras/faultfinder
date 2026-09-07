@@ -8,14 +8,14 @@ import { FaultGuess } from './FaultGuess';
 import type { Difficulty } from './faultSelection';
 import { pickRandomFault } from './faultSelection';
 import { pcbCameraFraming, pcbMmToThreeVec3 } from './kicadCoords';
-import { DraggingLead, Multimeter } from './Multimeter';
+import { Multimeter } from './Multimeter';
 import type { MultimeterMode } from './Multimeter';
-import type { Leads, Measurement } from './probeSelection';
+import type { Leads, LeadColor, Measurement } from './probeSelection';
 import { EMPTY_LEADS, selectedNodes, setLead, visibleResult } from './probeSelection';
 import { screenToBoardMm } from './pcbRaycast';
 import './SchematicProbeView.css';
 import type { Device } from './types';
-import { useLeadDrag } from './useLeadDrag';
+import { useTapGesture } from './useTapGesture';
 
 const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard', 'random'];
 
@@ -34,9 +34,9 @@ export interface PcbRaycastHandle {
 }
 
 // Lives inside <Canvas> (needs useThree for the real camera/renderer) and
-// exposes a plain screen-point -> board-mm conversion imperatively, so a drop
-// event handled *outside* the canvas (in the plain DOM onPointerUp from
-// useLeadDrag) can still raycast through the real camera at that point --
+// exposes a plain screen-point -> board-mm conversion imperatively, so a tap
+// handled *outside* the canvas (in the plain DOM onPointerUp from
+// useTapGesture) can still raycast through the real camera at that point --
 // see pcbRaycast.ts for the actual (React-free, independently testable) math.
 const DropRaycaster = forwardRef<PcbRaycastHandle, { boardThicknessMm: number }>(function DropRaycaster(
   { boardThicknessMm },
@@ -79,6 +79,7 @@ export function LeadIndicator({
 export function PcbProbeView({ deviceId, onGuess = () => {} }: Props) {
   const [device, setDevice] = useState<Device | null>(null);
   const [leads, setLeads] = useState<Leads>(EMPTY_LEADS);
+  const [armedLead, setArmedLead] = useState<LeadColor | null>(null);
   const [mode, setMode] = useState<MultimeterMode>('voltage');
   const [difficulty, setDifficulty] = useState<Difficulty>('easy');
   const [faultId, setFaultId] = useState('healthy');
@@ -117,9 +118,17 @@ export function PcbProbeView({ deviceId, onGuess = () => {} }: Props) {
     const target = resolvePcbDropTarget(worldMm.xMm, worldMm.yMm, device);
     if (!target) return;
     setLeads((prev) => setLead(prev, color, target));
+    setArmedLead(null);
   }
 
-  const { drag, startDrag } = useLeadDrag(place);
+  const { onPointerDown, onPointerUp } = useTapGesture((clientX, clientY) => {
+    if (!armedLead) return;
+    place(armedLead, clientX, clientY);
+  });
+
+  function onLeadClick(color: LeadColor) {
+    setArmedLead((current) => (current === color ? null : color));
+  }
 
   if (error && !device) return <p className="error">Error: {error}</p>;
   if (!device) return <p>Loading device…</p>;
@@ -164,7 +173,13 @@ export function PcbProbeView({ deviceId, onGuess = () => {} }: Props) {
       {revealed && currentFault && <p className="revealed-fault">Fault: {currentFault.name}</p>}
 
       <div className="probe-workspace">
-        <div className="pcb-stage" style={{ width: 500, height: 400 }}>
+        <div
+          className="pcb-stage"
+          data-testid="probe-stage"
+          style={{ width: 500, height: 400, cursor: armedLead ? 'crosshair' : 'auto' }}
+          onPointerDown={onPointerDown}
+          onPointerUp={onPointerUp}
+        >
           <Canvas camera={{ position: framing.position, near: framing.near, far: framing.far, fov: 40 }}>
             <ambientLight intensity={0.6} />
             <directionalLight
@@ -205,12 +220,12 @@ export function PcbProbeView({ deviceId, onGuess = () => {} }: Props) {
           display={formatDmmReading(mode, shown)}
           redPlaced={leads.red !== null}
           blackPlaced={leads.black !== null}
-          onLeadPointerDown={(color, e) => startDrag(color, e.clientX, e.clientY)}
+          armedLead={armedLead}
+          onLeadClick={onLeadClick}
         />
       </div>
-      {drag && <DraggingLead color={drag.color} clientX={drag.clientX} clientY={drag.clientY} />}
 
-      <p className="hint">Drag to orbit the board. Drag a lead from the multimeter onto a pad or copper trace.</p>
+      <p className="hint">Drag to orbit the board. Click a lead on the multimeter, then tap a pad or copper trace to place it.</p>
 
       {error && <p className="error">Error: {error}</p>}
 

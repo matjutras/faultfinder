@@ -5,13 +5,13 @@ import { FaultGuess } from './FaultGuess';
 import type { Difficulty } from './faultSelection';
 import { pickRandomFault } from './faultSelection';
 import { formatDmmReading } from './dmmDisplay';
-import { DraggingLead, Multimeter } from './Multimeter';
+import { Multimeter } from './Multimeter';
 import type { MultimeterMode } from './Multimeter';
-import type { Leads, Measurement } from './probeSelection';
+import type { Leads, LeadColor, Measurement } from './probeSelection';
 import { EMPTY_LEADS, selectedNodes, setLead, visibleResult } from './probeSelection';
 import './SchematicProbeView.css';
 import type { Device } from './types';
-import { useLeadDrag } from './useLeadDrag';
+import { useTapGesture } from './useTapGesture';
 
 // At the old 500x354 (~3.2px/mm against the 100x110mm page), adjacent TP
 // markers needed >13.6mm of separation just for their 44px tap targets not
@@ -33,6 +33,7 @@ interface Props {
 export function SchematicProbeView({ deviceId, onGuess = () => {} }: Props) {
   const [device, setDevice] = useState<Device | null>(null);
   const [leads, setLeads] = useState<Leads>(EMPTY_LEADS);
+  const [armedLead, setArmedLead] = useState<LeadColor | null>(null);
   const [mode, setMode] = useState<MultimeterMode>('voltage');
   const [difficulty, setDifficulty] = useState<Difficulty>('easy');
   const [faultId, setFaultId] = useState('healthy');
@@ -81,9 +82,17 @@ export function SchematicProbeView({ deviceId, onGuess = () => {} }: Props) {
     );
     if (!target) return;
     setLeads((prev) => setLead(prev, color, target));
+    setArmedLead(null);
   }
 
-  const { drag, startDrag } = useLeadDrag(place);
+  const { onPointerDown, onPointerUp } = useTapGesture((clientX, clientY) => {
+    if (!armedLead) return;
+    place(armedLead, clientX, clientY);
+  });
+
+  function onLeadClick(color: LeadColor) {
+    setArmedLead((current) => (current === color ? null : color));
+  }
 
   if (error && !device) return <p className="error">Error: {error}</p>;
   if (!device) return <p>Loading device…</p>;
@@ -122,7 +131,14 @@ export function SchematicProbeView({ deviceId, onGuess = () => {} }: Props) {
       {revealed && currentFault && <p className="revealed-fault">Fault: {currentFault.name}</p>}
 
       <div className="probe-workspace">
-        <div ref={stageRef} className="schematic-stage" style={{ width: SCHEMATIC_WIDTH, height: SCHEMATIC_HEIGHT }}>
+        <div
+          ref={stageRef}
+          className="schematic-stage"
+          data-testid="probe-stage"
+          style={{ width: SCHEMATIC_WIDTH, height: SCHEMATIC_HEIGHT, cursor: armedLead ? 'crosshair' : 'default' }}
+          onPointerDown={onPointerDown}
+          onPointerUp={onPointerUp}
+        >
           <kicanvas-embed
             src={deviceAssetUrl(deviceId, device.schematic_sch)}
             controls="none"
@@ -145,12 +161,12 @@ export function SchematicProbeView({ deviceId, onGuess = () => {} }: Props) {
           display={formatDmmReading(mode, shown)}
           redPlaced={leads.red !== null}
           blackPlaced={leads.black !== null}
-          onLeadPointerDown={(color, e) => startDrag(color, e.clientX, e.clientY)}
+          armedLead={armedLead}
+          onLeadClick={onLeadClick}
         />
       </div>
-      {drag && <DraggingLead color={drag.color} clientX={drag.clientX} clientY={drag.clientY} />}
 
-      <p className="hint">Drag a lead from the multimeter onto any pin or wire.</p>
+      <p className="hint">Click a lead on the multimeter, then tap any pin or wire to place it.</p>
 
       {error && <p className="error">Error: {error}</p>}
 

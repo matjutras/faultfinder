@@ -1,6 +1,5 @@
-import type { PointerEvent } from 'react';
 import './Multimeter.css';
-import type { LeadColor } from './useLeadDrag';
+import type { LeadColor } from './probeSelection';
 
 export type MultimeterMode = 'voltage' | 'ohms' | 'diode';
 
@@ -16,14 +15,21 @@ interface Props {
   display: string;
   redPlaced: boolean;
   blackPlaced: boolean;
-  onLeadPointerDown: (color: LeadColor, e: PointerEvent) => void;
+  armedLead: LeadColor | null;
+  onLeadClick: (color: LeadColor) => void;
 }
 
 // A literal multimeter graphic: a mode selector, a digital display, and two
-// draggable leads (red/black) the user drags onto the schematic/PCB and
-// drops on a real pin/pad/wire/track (see dropTargets.ts) -- replaces the
-// old click-to-place TP markers entirely, not just visually.
-export function Multimeter({ mode, onModeChange, display, redPlaced, blackPlaced, onLeadPointerDown }: Props) {
+// wireless leads (red/black). Clicking a jack arms that lead (highlighted --
+// clicking an already-armed jack disarms it instead); the next tap on the
+// schematic/PCB workspace places the armed lead on whatever real
+// pin/pad/wire/track is under it (see dropTargets.ts) and disarms. Replaces
+// the earlier drag-and-drop flow, which real user feedback found fiddly
+// (dragging a small handle precisely onto a pad) -- a real handheld
+// multimeter's leads are wired to the meter and moved by hand one at a time
+// anyway, so click-to-arm/tap-to-place is the closer analogue, not a
+// downgrade from "more physical."
+export function Multimeter({ mode, onModeChange, display, redPlaced, blackPlaced, armedLead, onLeadClick }: Props) {
   return (
     <div className="multimeter">
       <div className="multimeter-display" data-testid="multimeter-display">
@@ -43,32 +49,23 @@ export function Multimeter({ mode, onModeChange, display, redPlaced, blackPlaced
         ))}
       </div>
       <div className="multimeter-jacks">
-        <div
-          className={`lead-jack red ${redPlaced ? 'placed' : ''}`}
-          data-testid="lead-drag-red"
-          title="Drag onto a pin, pad, wire, or trace"
-          onPointerDown={(e) => onLeadPointerDown('red', e)}
+        <button
+          type="button"
+          className={`lead-jack red ${redPlaced ? 'placed' : ''} ${armedLead === 'red' ? 'armed' : ''}`}
+          data-testid="lead-jack-red"
+          aria-pressed={armedLead === 'red'}
+          title="Click, then tap a pin, pad, wire, or trace to place this lead"
+          onClick={() => onLeadClick('red')}
         />
-        <div
-          className={`lead-jack black ${blackPlaced ? 'placed' : ''}`}
-          data-testid="lead-drag-black"
-          title="Drag onto a pin, pad, wire, or trace"
-          onPointerDown={(e) => onLeadPointerDown('black', e)}
+        <button
+          type="button"
+          className={`lead-jack black ${blackPlaced ? 'placed' : ''} ${armedLead === 'black' ? 'armed' : ''}`}
+          data-testid="lead-jack-black"
+          aria-pressed={armedLead === 'black'}
+          title="Click, then tap a pin, pad, wire, or trace to place this lead"
+          onClick={() => onLeadClick('black')}
         />
       </div>
     </div>
-  );
-}
-
-// The lead's floating "flying tip" rendered at the pointer's current position
-// while a drag is in progress -- fixed-position so it can visually travel
-// over the board regardless of where the multimeter itself sits in the page.
-export function DraggingLead({ color, clientX, clientY }: { color: LeadColor; clientX: number; clientY: number }) {
-  return (
-    <div
-      className={`dragging-lead ${color}`}
-      style={{ left: clientX, top: clientY }}
-      data-testid={`dragging-lead-${color}`}
-    />
   );
 }

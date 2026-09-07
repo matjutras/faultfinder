@@ -1,10 +1,11 @@
 // Ad-hoc live-browser verification script, run manually against a live
 // backend+frontend dev pair -- not part of the automated test suite (see
 // backend/tests and frontend/*.test.tsx for that). Exercises the exact
-// drag-and-drop probe flow a real user would, computing drop pixel
-// coordinates from the device's own API-reported pin positions and page
-// size (mirrors src/kicadCoords.ts's schematicMmToPixels -- kept in sync by
-// hand since this script isn't bundled through the app's own TS build).
+// click-to-arm/tap-to-place probe flow a real user would, computing tap
+// pixel coordinates from the device's own API-reported pin positions and
+// page size (mirrors src/kicadCoords.ts's schematicMmToPixels -- kept in
+// sync by hand since this script isn't bundled through the app's own TS
+// build).
 //
 // Usage: node scripts/verify-device.mjs <deviceId> <frontendUrl> [outDir]
 import { chromium } from '@playwright/test';
@@ -73,20 +74,18 @@ try {
   const pageW = deviceResp.page_width_mm;
   const pageH = deviceResp.page_height_mm;
 
-  async function dropLead(color, pinMm) {
+  async function placeLead(color, pinMm) {
     const local = schematicMmToPixels(pinMm.x_mm, pinMm.y_mm, SCHEMATIC_WIDTH, SCHEMATIC_HEIGHT, pageW, pageH);
     const targetX = stageBox.x + local.x;
     const targetY = stageBox.y + local.y;
-    const handle = page.locator(`[data-testid="lead-drag-${color}"]`);
-    const handleBox = await handle.boundingBox();
-    await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+    await page.click(`[data-testid="lead-jack-${color}"]`);
+    await page.mouse.move(targetX, targetY);
     await page.mouse.down();
-    await page.mouse.move(targetX, targetY, { steps: 8 });
     await page.mouse.up();
   }
 
-  await dropLead('red', redPin);
-  await dropLead('black', blackPin);
+  await placeLead('red', redPin);
+  await placeLead('black', blackPin);
   await page.waitForTimeout(400);
 
   const leadRedVisible = await page.locator('[data-testid="lead-red"]').isVisible().catch(() => false);

@@ -1,8 +1,8 @@
-// Resolves where a dragged multimeter lead landed, for both views -- same
+// Resolves where a tapped multimeter lead landed, for both views -- same
 // "exact parsed geometry, not proximity-guessing" principle as the old
-// click-based probe placement (see wireHitTest.ts, kicadCoords.ts): a lead
+// TP-marker probe placement (see wireHitTest.ts, kicadCoords.ts): a lead
 // snaps to the nearest real pin/pad/wire/track point within a small
-// tolerance of the drop location, never to an arbitrary click/drop pixel.
+// tolerance of the tap location, never to an arbitrary click pixel.
 import type { ProbeTarget } from './probeSelection';
 import { hitTestSegments, nearestPointOnSegment } from './wireHitTest';
 import { schematicMmToPixels } from './kicadCoords';

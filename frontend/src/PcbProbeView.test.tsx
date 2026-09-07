@@ -58,18 +58,19 @@ describe('PcbProbeView', () => {
     render(<PcbProbeView deviceId="voltage_divider_01" />);
     await screen.findByText('Simple Voltage Divider — PCB view');
 
-    expect(screen.getByTestId('lead-drag-red')).not.toHaveClass('placed');
-    expect(screen.getByTestId('lead-drag-black')).not.toHaveClass('placed');
+    expect(screen.getByTestId('lead-jack-red')).not.toHaveClass('placed');
+    expect(screen.getByTestId('lead-jack-black')).not.toHaveClass('placed');
     // The old click-to-place hint/copy this view shipped with is gone.
     expect(screen.queryByText(/click.*test point/i)).not.toBeInTheDocument();
   });
 
-  it('a drag that starts and drops without a resolvable board point does not crash and leaves the lead unplaced', async () => {
-    // jsdom has no real WebGL, so the canvas this drop would raycast through
+  it('a tap that lands without a resolvable board point does not crash and leaves the lead unplaced', async () => {
+    // jsdom has no real WebGL, so the canvas this tap would raycast through
     // never produces a usable camera/board point here -- this is a smoke
-    // test that the drag lifecycle (pointerdown -> window pointerup ->
-    // raycast miss -> no-op) is safe end to end, not a geometry check (that's
-    // pcbRaycast.test.ts and dropTargets.test.ts, both against real math).
+    // test that the arm-then-tap lifecycle (click jack -> pointerdown/up on
+    // stage -> raycast miss -> no-op) is safe end to end, not a geometry
+    // check (that's pcbRaycast.test.ts and dropTargets.test.ts, both against
+    // real math).
     vi.spyOn(api, 'getDevice').mockResolvedValue(DEVICE);
     vi.spyOn(api, 'deviceAssetUrl').mockReturnValue('/pcb.glb');
     vi.spyOn(Math, 'random').mockReturnValue(0);
@@ -77,9 +78,11 @@ describe('PcbProbeView', () => {
     render(<PcbProbeView deviceId="voltage_divider_01" />);
     await screen.findByText('Simple Voltage Divider — PCB view');
 
-    fireEvent.pointerDown(screen.getByTestId('lead-drag-red'), { clientX: 0, clientY: 0 });
-    fireEvent.pointerUp(window, { clientX: 250, clientY: 200 });
+    fireEvent.click(screen.getByTestId('lead-jack-red'));
+    const stage = screen.getByTestId('probe-stage');
+    fireEvent.pointerDown(stage, { clientX: 250, clientY: 200 });
+    fireEvent.pointerUp(stage, { clientX: 250, clientY: 200 });
 
-    expect(screen.getByTestId('lead-drag-red')).not.toHaveClass('placed');
+    expect(screen.getByTestId('lead-jack-red')).not.toHaveClass('placed');
   });
 });

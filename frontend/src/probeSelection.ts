@@ -1,6 +1,6 @@
 import type { DmmMode, MeasureResult } from './types';
 
-// Where a dragged lead landed -- a pin, a pad, or a point along a wire/track
+// Where a tapped lead landed -- a pin, a pad, or a point along a wire/track
 // (see dropTargets.ts). `targetId` identifies what it resolved to; `node` is
 // the real SPICE node it resolves to, used for the actual /measure call;
 // `x`/`y` are the landing position, for rendering the lead marker at the
@@ -21,10 +21,11 @@ export const EMPTY_LEADS: Leads = { red: null, black: null };
 
 export type LeadColor = 'red' | 'black';
 
-// Drag-and-drop semantics: each lead is independently draggable from the
-// multimeter graphic (see Multimeter.tsx/useLeadDrag.ts), so placing one
-// simply (re)assigns that lead's own target -- there's no shared "window" to
-// slide, unlike the old click-to-cycle picker this replaced.
+// Click-to-arm/tap-to-place semantics: each lead is independently armed and
+// placed from the multimeter graphic (see Multimeter.tsx/useTapGesture.ts),
+// so placing one simply (re)assigns that lead's own target -- there's no
+// shared "window" to slide, unlike the old click-to-cycle picker this
+// replaced.
 export function setLead(leads: Leads, color: LeadColor, target: ProbeTarget): Leads {
   return color === 'red' ? { ...leads, red: target } : { ...leads, black: target };
 }

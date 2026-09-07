@@ -57,9 +57,9 @@
 .lead-jack {
   width: 30px;
   height: 30px;
+  padding: 0;
   border-radius: 50%;
-  cursor: grab;
-  touch-action: none;
+  cursor: pointer;
   border: 3px solid #111;
 }
 
@@ -76,22 +76,16 @@
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.5);
 }
 
-.dragging-lead {
-  position: fixed;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  z-index: 1000;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+.lead-jack.armed {
+  animation: lead-jack-armed-pulse 1s ease-in-out infinite;
 }
 
-.dragging-lead.red {
-  background: #c0392b;
-}
-
-.dragging-lead.black {
-  background: #1a1a1a;
+@keyframes lead-jack-armed-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px #fff, 0 0 0 3px #fff;
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.15);
+  }
 }
