@@ -48,6 +48,24 @@ import pcbnew
 
 _UNSAFE_NODE_CHAR_RE = re.compile(r"[^A-Za-z0-9_]")
 
+# Real-world KiCad boards commonly place mechanical/enclosure-context
+# footprints -- panel-mount jacks, a footswitch, the enclosure body itself --
+# physically outside the board's own Edge_Cuts outline, a normal KiCad
+# convention for showing off-board panel hardware relative to the PCB for
+# mechanical-fit purposes, not a design error. kicad-cli's glb exporter has
+# no concept of this: it exports every footprint's pads/silkscreen (and 3D
+# model, when one resolves) regardless of position, which renders in the
+# app's 3D view as components floating in space, disconnected from the
+# actual board -- confirmed on fuzz_pedal_11 (github.com/Circle-Circuits/
+# motherboard): its enclosure, two 6.35mm audio jacks, a DC barrel jack, a
+# panel footswitch, and a toggle switch are all real, deliberately off-board
+# mechanical references in the source, not an import bug. GLB_EXCLUDE_MARGIN_MM
+# (not an exact edge match) tolerates ordinary edge-mounted connectors whose
+# footprint anchor legitimately sits within a couple mm of the board edge --
+# tight enough to still catch fuzz_pedal_11's two 6.35mm jacks, whose anchors
+# are only 3.34mm past the edge.
+GLB_EXCLUDE_MARGIN_MM = 2.0
+
 _GENERATOR_VERSION_RE = re.compile(r'\(generator_version "([\d.]+)"\)')
 
 
@@ -102,7 +120,7 @@ def normalize_net_name(name: str) -> str:
     return name
 
 
-def import_real_pcb(pcb_path: Path) -> dict:
+def import_real_pcb(pcb_path: Path, glb_source_path: Path) -> dict:
     check_kicad_version_compatible(pcb_path, pcb_path.read_text())
     board = pcbnew.LoadBoard(str(pcb_path))
 
@@ -141,6 +159,23 @@ def import_real_pcb(pcb_path: Path) -> dict:
     new_bbox = board.GetBoardEdgesBoundingBox()
     board_thickness_mm = board.GetDesignSettings().GetBoardThickness() / 1_000_000
 
+    # A *separate* .kicad_pcb (caller-provided path, outside devices/ -- see
+    # pcb_import.py, which writes it into its own tempdir and deletes it once
+    # the glb export step is done with it, since it's derived output, not
+    # real board source), used only for the glb export step -- pcb_path
+    # itself (and every pad/track above, both already read off `board` before
+    # this mutates it) stays the real, faithful, unmodified board.
+    left = new_bbox.GetLeft() / 1_000_000 - GLB_EXCLUDE_MARGIN_MM
+    right = new_bbox.GetRight() / 1_000_000 + GLB_EXCLUDE_MARGIN_MM
+    top = new_bbox.GetTop() / 1_000_000 - GLB_EXCLUDE_MARGIN_MM
+    bottom = new_bbox.GetBottom() / 1_000_000 + GLB_EXCLUDE_MARGIN_MM
+    for fp in list(board.GetFootprints()):
+        pos = fp.GetPosition()
+        x_mm, y_mm = pos.x / 1_000_000, pos.y / 1_000_000
+        if not (left <= x_mm <= right and top <= y_mm <= bottom):
+            board.Remove(fp)
+    pcbnew.SaveBoard(str(glb_source_path), board)
+
     return {
         "pads": all_pads,
         "tracks": track_manifest,
@@ -149,10 +184,11 @@ def import_real_pcb(pcb_path: Path) -> dict:
             "height": new_bbox.GetHeight() / 1_000_000,
         },
         "board_thickness_mm": board_thickness_mm,
+        "glb_source_pcb": str(glb_source_path),
     }
 
 
 if __name__ == "__main__":
-    pcb_arg, manifest_arg = sys.argv[1], sys.argv[2]
-    manifest = import_real_pcb(Path(pcb_arg))
+    pcb_arg, manifest_arg, glb_source_arg = sys.argv[1], sys.argv[2], sys.argv[3]
+    manifest = import_real_pcb(Path(pcb_arg), Path(glb_source_arg))
     Path(manifest_arg).write_text(json.dumps(manifest))
