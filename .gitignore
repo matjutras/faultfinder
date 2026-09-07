@@ -50,6 +50,8 @@ devices/*/*.kicad_prl
 !devices/reverse_polarity_08/*.kicad_pro
 !devices/battery_protection_09/*.kicad_pcb
 !devices/battery_protection_09/*.kicad_pro
+!devices/soft_power_switch_10/*.kicad_pcb
+!devices/soft_power_switch_10/*.kicad_pro
 
 # Editors / OS
 .vscode/

@@ -1,0 +1,51 @@
+* SBK_SP1 Soft Power Switch - FaultFinder device soft_power_switch_10
+* Real board (see NOTICE.md) takes power from an external battery/supply at
+* VIN (2-12 VDC per the source repo's own README); modeled here as an
+* equivalent DC source, same simplification every other device in this
+* project makes at its own input. 5V chosen as a representative point within
+* that range.
+*
+* HOLD (J1 pin 4) and SENS (J1 pin 6) are external MCU interface pins with no
+* onboard pull-up/down -- the real board expects an external MCU or pull-up
+* on both (see NOTICE.md), so with none connected here they're left as
+* dangling single-component stubs (R1's and D4's far terminal), the same
+* simplification this project already makes for every other off-board
+* connection. SW1 (the onboard button) is left unpressed -- its natural
+* resting state -- modeled as a 1T (1e12-ohm) resistor to GND (the same
+* "open" magnitude netlist.py's own open_pin patch already uses) rather than
+* omitted outright: omitting it left Net__D3_K_ defined only by two diodes
+* sitting at near-zero current, which a later add_short fault landing on
+* that node drove into a genuine ngspice singular-matrix failure (found by
+* actually running every generated fault through ngspice, not assumed).
+* Written as "1T" (SPICE's own tera suffix), not "1e12" -- fault_gen's ref
+* validator requires a resistor's trailing token look like a real value with
+* only a unit-letter suffix, and scientific notation doesn't match that.
+*
+* This board's whole SW/D3/D4/M2-gate cluster is a deliberate positive-
+* feedback soft-latch (that's the entire point of the circuit -- see
+* NOTICE.md) -- ngspice's default op solver genuinely failed to converge
+* (real "singular matrix" errors, not a hunch) on two different add_short
+* faults that landed inside that loop, the same convergence sensitivity a
+* regenerative circuit is known for. `.options gmin=1e-9` (a standard SPICE
+* convergence aid, not app-specific) fixed every one of the 74 generated
+* faults when actually run through ngspice -- see this repo's dev workflow
+* rule to verify against a real run, not assume.
+.options gmin=1e-9
+V1 VIN 0 DC 5
+R1 Net__Q1_G_ Net__J1_Pin_4_ 4.7k
+R2 Net__Q1_G_ 0 100k
+R3 VIN Net__D3_A_ 47k
+R4 Net__D1_K_ 0 15k
+R5 Net__D2_K_ 0 10k
+R6 Net__D3_K_ 0 1T
+D1 VIN Net__D1_K_ LEDMOD
+D2 VOUT Net__D2_K_ LEDMOD
+D3 Net__D3_A_ Net__D3_K_ DMOD
+D4 Net__D4_A_ Net__D3_K_ DMOD
+M1 Net__D3_A_ Net__Q1_G_ 0 0 NMOSMOD
+M2 VOUT Net__D3_A_ VIN VIN PMOSMOD
+.model NMOSMOD NMOS
+.model PMOSMOD PMOS
+.model LEDMOD D
+.model DMOD D
+.end
