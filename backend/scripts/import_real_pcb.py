@@ -39,6 +39,7 @@ probe-anywhere gameplay even without pour-copper hit-testing between pads.
 """
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -46,6 +47,47 @@ import pcbnew
 
 
 _UNSAFE_NODE_CHAR_RE = re.compile(r"[^A-Za-z0-9_]")
+
+_GENERATOR_VERSION_RE = re.compile(r'\(generator_version "([\d.]+)"\)')
+
+
+def _parse_dotted_version(text: str) -> tuple[int, ...] | None:
+    match = _GENERATOR_VERSION_RE.search(text)
+    if not match:
+        return None
+    return tuple(int(p) for p in match.group(1).split("."))
+
+
+def _installed_kicad_version() -> tuple[int, ...]:
+    result = subprocess.run(["kicad-cli", "version"], capture_output=True, text=True, timeout=10)
+    return tuple(int(p) for p in result.stdout.strip().split(".") if p.isdigit())
+
+
+def check_kicad_version_compatible(pcb_path: Path, pcb_text: str) -> None:
+    """Same check and same reasoning as app/kicad_import.py's function of the
+    same name -- duplicated rather than imported because this script runs
+    under the *system* python3 for pcbnew availability (see this module's own
+    docstring), not the app's venv. Checked here before pcbnew.LoadBoard()
+    rather than left to fail there: a version-mismatched .kicad_pcb is
+    exactly the reverse_polarity_08 failure this generalizes (see
+    kicad_import.py's docstring for the full incident), and pcbnew.LoadBoard
+    on an unparseable file is a crash from inside the pcbnew C++ bindings,
+    not a message a future importer could act on."""
+    file_version = _parse_dotted_version(pcb_text)
+    if file_version is None:
+        return
+    installed = _installed_kicad_version()
+    if file_version[:2] > installed[:2]:
+        print(
+            f"{pcb_path.name} was authored in KiCad "
+            f"{'.'.join(map(str, file_version))}, but only KiCad "
+            f"{'.'.join(map(str, installed)) or 'unknown'} is installed. An "
+            "older kicad-cli/pcbnew cannot reliably parse a newer file "
+            "format. Upgrade the system KiCad install before importing this "
+            "device -- see CLAUDE.md's KiCad 9->10 upgrade note.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 def normalize_net_name(name: str) -> str:
@@ -61,6 +103,7 @@ def normalize_net_name(name: str) -> str:
 
 
 def import_real_pcb(pcb_path: Path) -> dict:
+    check_kicad_version_compatible(pcb_path, pcb_path.read_text())
     board = pcbnew.LoadBoard(str(pcb_path))
 
     bbox = board.GetBoardEdgesBoundingBox()

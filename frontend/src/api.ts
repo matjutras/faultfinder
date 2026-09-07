@@ -1,6 +1,12 @@
 import type { Device, DeviceSummary, DmmMode, MeasureResult } from './types';
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
+// Exported (not just used internally) so App.tsx's on-load API-reachability
+// check can print the actual configured value into the visible error state --
+// this is what would have caught the 2026-09-06 production incident (a
+// rebuild without VITE_API_BASE set fell back to this same localhost default,
+// so every real visitor's browser silently called their own machine) at a
+// glance, instead of only in each visitor's own browser console.
+export const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
 
 export async function listDevices(): Promise<DeviceSummary[]> {
   const resp = await fetch(`${API_BASE}/api/devices`);

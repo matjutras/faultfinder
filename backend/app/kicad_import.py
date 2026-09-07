@@ -80,7 +80,64 @@ class KicadCliError(Exception):
     pass
 
 
+class UnsupportedKicadVersionError(Exception):
+    pass
+
+
+GENERATOR_VERSION_RE = re.compile(r'\(generator_version "([\d.]+)"\)')
+
+
+def _parse_dotted_version(text: str) -> tuple[int, ...] | None:
+    match = GENERATOR_VERSION_RE.search(text)
+    if not match:
+        return None
+    return tuple(int(p) for p in match.group(1).split("."))
+
+
+def installed_kicad_version() -> tuple[int, ...]:
+    result = subprocess.run(["kicad-cli", "version"], capture_output=True, text=True, timeout=10)
+    return tuple(int(p) for p in result.stdout.strip().split(".") if p.isdigit())
+
+
+def check_kicad_version_compatible(source_path: Path, source_text: str) -> None:
+    """Fails fast, with a clear message, instead of letting kicad-cli/pcbnew
+    fail on its own with a cryptic parse error or crash when a source file is
+    newer than the installed toolchain -- this generalizes the fix
+    reverse_polarity_08 needed (see CLAUDE.md): its source repo was authored
+    in KiCad 10, which the kicad-cli/pcbnew 9.0.8 install at the time
+    couldn't parse *at all* (confirmed by hand-patching the file's own
+    version header down to a KiCad 9 value and re-running -- still failed,
+    so this is a genuine format difference, not a version-number guard that
+    could just be bypassed). That was fixed one-off by upgrading the system's
+    KiCad install; this makes the check itself permanent, so the *next* real
+    board authored in a newer KiCad than whatever happens to be installed
+    fails with an actionable message pointing at the version mismatch, not a
+    stack trace from deep inside kicad-cli or pcbnew.
+
+    Every `.kicad_sch`/`.kicad_pcb` KiCad has generated since the header was
+    introduced carries its own `(generator_version "X.Y")` -- compared here
+    against `kicad-cli version`'s own dotted output. A very old file that
+    predates this header returns None from the parse and is let through
+    uncompared, since there's nothing here to definitively compare against
+    (rather than assuming incompatibility with no positive evidence)."""
+    file_version = _parse_dotted_version(source_text)
+    if file_version is None:
+        return
+    installed = installed_kicad_version()
+    if file_version[:2] > installed[:2]:
+        raise UnsupportedKicadVersionError(
+            f"{source_path.name} was authored in KiCad "
+            f"{'.'.join(map(str, file_version))}, but only KiCad "
+            f"{'.'.join(map(str, installed)) or 'unknown'} is installed. An "
+            "older kicad-cli/pcbnew cannot reliably parse a newer file "
+            "format (confirmed: KiCad 9.0.8 could not parse a KiCad 10 file "
+            "at all). Upgrade the system KiCad install before importing "
+            "this device -- see CLAUDE.md's KiCad 9->10 upgrade note."
+        )
+
+
 def export_netlist_xml(sch_path: Path) -> str:
+    check_kicad_version_compatible(sch_path, sch_path.read_text())
     with tempfile.TemporaryDirectory() as tmp:
         out_path = Path(tmp) / "netlist.xml"
         result = subprocess.run(

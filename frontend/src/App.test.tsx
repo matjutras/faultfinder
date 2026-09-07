@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 import * as api from './api';
+import { API_BASE } from './api';
 import { dragLeadTo } from './test/dragLead';
 
 const DEVICE = {
@@ -80,6 +81,22 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Resistor Bridge' })).toBeInTheDocument();
     expect(getDeviceSpy).toHaveBeenCalledWith(OTHER_DEVICE.id);
+  });
+
+  it('shows the configured API base in the error banner when the API is unreachable', async () => {
+    // Regression test for the 2026-09-06 production incident: a frontend
+    // rebuild without VITE_API_BASE set silently fell back to the localhost
+    // dev default, so every real visitor's browser called their own machine
+    // and failed. Printing API_BASE right in the visible error is the
+    // safeguard -- it turns that into an obviously-wrong deploy config at a
+    // glance, with no devtools/console required.
+    vi.spyOn(api, 'listDevices').mockRejectedValue(new TypeError('Failed to fetch'));
+
+    render(<App />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(API_BASE);
+    expect(alert).toHaveTextContent('Failed to fetch');
   });
 
   it('clears placed probes and any reading when the user switches devices', async () => {

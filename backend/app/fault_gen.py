@@ -14,6 +14,51 @@ DRIFT_LOW = 0.1
 _NUMERIC_VALUE_RE = re.compile(r"^[-+]?[0-9]*\.?[0-9]+[a-zA-Z]*$")
 _SLUG_RE = re.compile(r"[^A-Za-z0-9]+")
 
+# Every first letter ngspice's own element-type table reserves for a specific
+# kind of circuit element, mapped to what it actually means. battery_protection_09
+# hit this for real with a fuse ref'd "F1" (SPICE's current-controlled-current-
+# source prefix) -- but that fix (see CLAUDE.md) only special-cased "F" itself,
+# so the *next* real board's own ref designator ("T1" for a terminal block, "K1"
+# for a connector, "S1" for a switch...) would hit the identical class of bug
+# under a different letter with nothing here to catch it. This is every letter
+# ngspice reserves, not just the one seen so far.
+RESERVED_SPICE_PREFIXES: dict[str, str] = {
+    "B": "GaAs FET / behavioral source",
+    "E": "voltage-controlled voltage source",
+    "F": "current-controlled current source",
+    "G": "voltage-controlled current source",
+    "H": "current-controlled voltage source",
+    "J": "JFET",
+    "K": "mutual inductance / coupled inductors",
+    "O": "lossy transmission line",
+    "S": "voltage-controlled switch",
+    "T": "lossless transmission line",
+    "U": "uniform distributed RC line",
+    "W": "current-controlled switch",
+    "X": "subcircuit call",
+    "Z": "MESFET / IGBT",
+}
+
+# The prefixes this project's own parse_components/_per_component_faults
+# below actually model correctly today. Anything else colliding with
+# RESERVED_SPICE_PREFIXES is unimplemented and dangerous to alias onto an
+# unrelated real-world part, exactly as "F" was for battery_protection_09's fuse.
+_MODELED_PREFIXES = {"R", "C", "L", "D", "Q", "M", "V", "I"}
+
+# R/L/C are also reserved letters, but this project *does* model them --
+# always as a plain 2-terminal part with a trailing numeric value. A line
+# whose ref starts with one of these but has no such value (parse_components
+# then had nothing numeric to treat as the value) means the ref just happens
+# to start with this letter without actually being that part -- exactly how
+# battery_protection_09's LED, ref "LED1", collided with SPICE's inductor
+# prefix "L": "LED1 node1 node2 LEDMOD" has no numeric inductance, "LEDMOD"
+# is a diode model name, so it isn't really an inductor line at all.
+_NUMERIC_VALUE_ELEMENT_NAME = {"R": "resistor", "L": "inductor", "C": "capacitor"}
+
+
+class ReservedSpicePrefixError(Exception):
+    pass
+
 
 class Component:
     __slots__ = ("ref", "prefix", "nodes", "value")
@@ -68,6 +113,41 @@ def parse_components(circuit_text: str) -> list[Component]:
 
         components.append(Component(ref, nodes, value))
     return components
+
+
+def validate_circuit_refs(components: list[Component]) -> None:
+    """Raises with a clear, actionable message the moment circuit.cir uses a
+    ref that collides with a SPICE-reserved element-type prefix, instead of
+    leaving it to surface later as ngspice's own cryptic "not enough
+    parameters"/similar error deep inside a /measure call (or, worse, a
+    silently misparsed phantom node the way "LED1" and "M1" both were before
+    their respective fixes -- see this module's own comments). Call this at
+    import/registration time (see main.py's /import route), not simulation
+    time, so a bad ref is caught before a device is ever playable."""
+    for c in components:
+        if c.prefix in _NUMERIC_VALUE_ELEMENT_NAME and c.value is None:
+            raise ReservedSpicePrefixError(
+                f"circuit.cir ref {c.ref!r} starts with {c.prefix!r}, which "
+                f"SPICE parses as a plain {_NUMERIC_VALUE_ELEMENT_NAME[c.prefix]} "
+                f"needing a trailing numeric value -- but this line has none, "
+                f"which means it's very likely a different kind of part whose "
+                f"ref just happens to start with {c.prefix!r} (this is exactly "
+                f"how battery_protection_09's LED, ref 'LED1', collided with "
+                f"SPICE's inductor prefix 'L'). Rename it in circuit.cir; the "
+                f"schematic's own ref designator is unaffected."
+            )
+        if c.prefix in _MODELED_PREFIXES:
+            continue
+        meaning = RESERVED_SPICE_PREFIXES.get(c.prefix)
+        if meaning is not None:
+            raise ReservedSpicePrefixError(
+                f"circuit.cir ref {c.ref!r} starts with {c.prefix!r}, which "
+                f"SPICE reserves for a {meaning} -- not a component this "
+                f"project models under that letter. Rename it in circuit.cir "
+                f"(the schematic's own ref designator is unaffected; see "
+                f"CLAUDE.md's battery_protection_09 note for the same fix "
+                f"applied to a fuse ref 'F1')."
+            )
 
 
 def _drift_value(value: str, factor: float) -> str:
@@ -172,6 +252,7 @@ def _net_pair_faults(components: list[Component]) -> list[dict]:
 
 def generate_fault_pool(circuit_text: str) -> list[dict]:
     components = parse_components(circuit_text)
+    validate_circuit_refs(components)
     per_component = _per_component_faults(components)
     net_pair = _net_pair_faults(components)
 

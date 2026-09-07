@@ -1,4 +1,5 @@
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -231,3 +232,27 @@ def test_resolve_wire_nets_drops_a_wire_with_no_pin_anywhere_in_its_chain():
     wires = [((0.0, 0.0), (10.0, 0.0))]
     segments = kicad_import.resolve_wire_nets(wires, pin_positions={})
     assert segments == []
+
+
+def test_check_kicad_version_compatible_allows_an_older_or_equal_file(monkeypatch):
+    monkeypatch.setattr(kicad_import, "installed_kicad_version", lambda: (10, 0, 6))
+    kicad_import.check_kicad_version_compatible(Path("x.kicad_sch"), '(generator_version "9.0")')  # must not raise
+    kicad_import.check_kicad_version_compatible(Path("x.kicad_sch"), '(generator_version "10.0")')  # must not raise
+
+
+def test_check_kicad_version_compatible_rejects_a_file_newer_than_installed(monkeypatch):
+    # The reverse_polarity_08 incident this generalizes: a KiCad 10 source
+    # file, kicad-cli/pcbnew 9.0.8 installed -- genuinely unparseable, not a
+    # version-number guard (confirmed by hand-patching the header down and
+    # re-running; it still failed).
+    monkeypatch.setattr(kicad_import, "installed_kicad_version", lambda: (9, 0, 8))
+    with pytest.raises(kicad_import.UnsupportedKicadVersionError, match=r"KiCad 10\.0.*KiCad 9\.0\.8"):
+        kicad_import.check_kicad_version_compatible(Path("device.kicad_sch"), '(generator_version "10.0")')
+
+
+def test_check_kicad_version_compatible_lets_a_file_with_no_header_through(monkeypatch):
+    # Very old KiCad files predate the generator_version header entirely --
+    # nothing to positively compare against, so let them through rather than
+    # assuming incompatibility with no evidence.
+    monkeypatch.setattr(kicad_import, "installed_kicad_version", lambda: (9, 0, 8))
+    kicad_import.check_kicad_version_compatible(Path("x.kicad_sch"), "(kicad_sch)")  # must not raise

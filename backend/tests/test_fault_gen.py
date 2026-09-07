@@ -1,3 +1,5 @@
+import pytest
+
 from app import devices, fault_gen
 
 CIRCUIT = devices.load_circuit("voltage_divider_01")
@@ -105,3 +107,34 @@ def test_mosfet_generates_drain_open_and_drain_source_leaky_short():
 
     leaky = next(f for f in pool if f["id"] == "m1_leaky_short")
     assert leaky["patch"] == [{"op": "add_short", "between": ["VIN", "VOUT"], "resistance": "1k"}]
+
+
+def test_reserved_unmodeled_prefix_raises_a_clear_error():
+    # "F1" collides with SPICE's current-controlled-current-source prefix --
+    # the real collision battery_protection_09's fuse hit before being
+    # renamed to "R4". Generalizes to every reserved letter, not just "F".
+    circuit = "V1 BAT 0 DC 3.7\nF1 BAT NET1 1\n.end\n"
+    with pytest.raises(fault_gen.ReservedSpicePrefixError, match="current-controlled current source"):
+        fault_gen.generate_fault_pool(circuit)
+
+
+def test_reserved_but_modeled_prefix_with_no_numeric_value_raises_a_clear_error():
+    # "LED1" starts with SPICE's inductor prefix "L", but this line has no
+    # numeric inductance value -- the real collision battery_protection_09's
+    # LED hit before being renamed to "D2". Unlike the "F1" case above, "L"
+    # is otherwise a legitimately modeled prefix, so this needs its own check.
+    circuit = "V1 BAT 0 DC 3.7\nLED1 BAT 0 LEDMOD\n.end\n"
+    with pytest.raises(fault_gen.ReservedSpicePrefixError, match="inductor"):
+        fault_gen.generate_fault_pool(circuit)
+
+
+def test_a_real_inductor_with_a_numeric_value_is_not_flagged():
+    circuit = "V1 BAT 0 DC 3.7\nL1 BAT NET1 10u\n.end\n"
+    fault_gen.generate_fault_pool(circuit)  # must not raise
+
+
+def test_every_existing_devices_circuit_passes_ref_validation():
+    # Regression guard: every device already committed to this repo must
+    # keep passing the new check, not just the synthetic cases above.
+    for device in devices.list_devices():
+        fault_gen.generate_fault_pool(devices.load_circuit(device["id"]))

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { listDevices } from './api';
+import { API_BASE, listDevices } from './api';
 import { PcbProbeView } from './PcbProbeView';
 import { INITIAL_SCORE, recordGuess } from './scoring';
 import { SchematicProbeView } from './SchematicProbeView';
@@ -29,7 +29,23 @@ function App() {
       .catch((e) => setError(e.message));
   }, []);
 
-  if (error) return <p className="error">Error: {error}</p>;
+  if (error) {
+    // Prints the actual configured API_BASE, not just the fetch failure --
+    // this is the whole safeguard. The 2026-09-06 incident (a frontend
+    // rebuild without VITE_API_BASE set silently fell back to the localhost
+    // dev default) looked identical to a real visitor's own network being
+    // broken from inside a browser console; showing the configured value
+    // right on the page turns "failed to fetch" into an obviously-wrong
+    // deploy config at a glance, with no devtools required.
+    return (
+      <main>
+        <h1>FaultFinder</h1>
+        <p className="error" role="alert">
+          Can't reach the FaultFinder API at <code>{API_BASE}</code>: {error}
+        </p>
+      </main>
+    );
+  }
   if (!deviceId) return <p>Loading devices…</p>;
 
   return (

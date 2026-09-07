@@ -70,6 +70,8 @@ def import_device(device_id: str):
         geometry = kicad_import.import_probe_geometry(device_id)
     except devices.DeviceNotFound:
         raise HTTPException(status_code=404, detail="device not found")
+    except kicad_import.UnsupportedKicadVersionError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except kicad_import.KicadCliError as e:
         raise HTTPException(status_code=502, detail=f"kicad-cli failed: {e}")
 
@@ -92,7 +94,10 @@ def import_device(device_id: str):
     }, indent=2) + "\n")
 
     circuit = devices.load_circuit(device_id)
-    faults = [HEALTHY_FAULT] + fault_gen.generate_fault_pool(circuit)
+    try:
+        faults = [HEALTHY_FAULT] + fault_gen.generate_fault_pool(circuit)
+    except fault_gen.ReservedSpicePrefixError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     faults_path = devices.device_dir(device_id) / "faults.json"
     faults_path.write_text(json.dumps(faults, indent=2) + "\n")
 
