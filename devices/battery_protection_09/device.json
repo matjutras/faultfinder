@@ -1,0 +1,5 @@
+{
+  "id": "battery_protection_09",
+  "name": "Li-Ion Battery Protection",
+  "schematic_sch": "battery_protection_09.kicad_sch"
+}

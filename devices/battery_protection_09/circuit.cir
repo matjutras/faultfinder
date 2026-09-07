@@ -1,0 +1,25 @@
+* Li-Ion Battery Protection - FaultFinder device battery_protection_09
+* BT1 (a real Li-Ion cell, no SPICE model of its own) is modeled as an
+* equivalent DC source, same simplification every other device in this
+* project makes at its own power input. F1 (a 500mA-rated PTC resettable
+* fuse, also not a SPICE part) is modeled as its real datasheet's typical
+* un-tripped series resistance (~1 ohm) -- see NOTICE.md. The status LED is
+* named D2 and the fuse R4 here, not the real board's own refs "LED1"/"F1" --
+* SPICE reserves a bare "F" name for a current-controlled current source (a
+* 4-argument dependent-source element, not a plain resistor -- ngspice
+* rejected "F1 bat_raw net__d1_a_ 1" outright, "not enough parameters"), and a
+* diode-family element must start with "D" (fault_gen.py's ref-prefix parsing
+* depends on it too). circuit.cir's own component names are FaultFinder's
+* addition, independent of the source schematic's refs (map.json still uses
+* the real "LED1"/"F1" refs for probe geometry).
+V1 BAT_RAW 0 DC 3.7
+R4 BAT_RAW Net__D1_A_ 1
+D1 Net__D1_A_ BAT_PROTECTED SCHOTTKYMOD
+R1 BAT_PROTECTED Net__LED1_A_ 330
+D2 Net__LED1_A_ 0 LEDMOD
+R2 BAT_PROTECTED Net__C1_Pad1_ 100k
+R3 Net__C1_Pad1_ 0 100k
+C1 Net__C1_Pad1_ 0 100n
+.model SCHOTTKYMOD D
+.model LEDMOD D
+.end

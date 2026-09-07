@@ -48,6 +48,8 @@ devices/*/*.kicad_prl
 !devices/simple_led_07/*.kicad_pro
 !devices/reverse_polarity_08/*.kicad_pcb
 !devices/reverse_polarity_08/*.kicad_pro
+!devices/battery_protection_09/*.kicad_pcb
+!devices/battery_protection_09/*.kicad_pro
 
 # Editors / OS
 .vscode/
