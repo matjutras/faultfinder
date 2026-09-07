@@ -1,4 +1,4 @@
-import { OrbitControls, useGLTF } from '@react-three/drei';
+import { Html, OrbitControls, useGLTF } from '@react-three/drei';
 import { Canvas, useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
@@ -13,6 +13,7 @@ import type { Difficulty } from './faultSelection';
 import { pickRandomFault } from './faultSelection';
 import { pcbCameraFraming, pcbMmToThreeVec3 } from './kicadCoords';
 import { Multimeter } from './Multimeter';
+import { componentLabelPositions } from './pcbLabels';
 import type { Leads, LeadColor, Measurement } from './probeSelection';
 import { EMPTY_LEADS, selectedNodes, setLead, visibleResult } from './probeSelection';
 import { screenToBoardMm } from './pcbRaycast';
@@ -230,6 +231,7 @@ export function PcbProbeView({ deviceId, onGuess = () => {}, titlePortalTarget, 
   const glbUrl = deviceAssetUrl(deviceId, device.pcb_glb);
   const boardThicknessMm = device.board_thickness_mm;
   const framing = pcbCameraFraming(device.board_size_mm, boardThicknessMm);
+  const componentLabels = componentLabelPositions(device.pcb_pads);
 
   function newFault(tier: Difficulty) {
     if (!device) return;
@@ -297,6 +299,17 @@ export function PcbProbeView({ deviceId, onGuess = () => {}, titlePortalTarget, 
               intensity={1.2}
             />
             <PcbModel url={glbUrl} />
+            {componentLabels.map((label) => (
+              <Html
+                key={label.ref}
+                position={pcbMmToThreeVec3(label.xMm, label.yMm, boardThicknessMm)}
+                center
+                className="pcb-ref-label"
+                style={{ pointerEvents: 'none' }}
+              >
+                {label.ref}
+              </Html>
+            ))}
             <DropRaycaster ref={raycastRef} boardThicknessMm={boardThicknessMm} />
             {redPos && (
               <LeadIndicator

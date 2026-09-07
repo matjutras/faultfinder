@@ -102,6 +102,23 @@
   text-align: left;
 }
 
+/* Reference-designator labels in the PCB view (milestone 11 follow-up) --
+   kicad-cli's glb export doesn't bake footprint reference text into the
+   board mesh (confirmed with a real close-up screenshot -- see CLAUDE.md),
+   so these are plain HTML overlays (@react-three/drei's <Html>) positioned
+   at each component's own real pad centroid instead of actual silkscreen. */
+.pcb-ref-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow:
+    0 0 2px #000,
+    0 0 2px #000;
+  white-space: nowrap;
+  user-select: none;
+}
+
 .error {
   color: #c0392b;
 }
