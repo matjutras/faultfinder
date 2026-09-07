@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import * as api from './api';
 import { PcbProbeView } from './PcbProbeView';
@@ -84,5 +85,69 @@ describe('PcbProbeView', () => {
     fireEvent.pointerUp(stage, { clientX: 250, clientY: 200 });
 
     expect(screen.getByTestId('lead-jack-red')).not.toHaveClass('placed');
+  });
+
+  it('offers continuity mode and measures via the real ohms wire mode', async () => {
+    vi.spyOn(api, 'getDevice').mockResolvedValue(DEVICE);
+    vi.spyOn(api, 'deviceAssetUrl').mockReturnValue('/pcb.glb');
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const measureSpy = vi.spyOn(api, 'measure').mockResolvedValue({ fault_id: 'r1_open', mode: 'ohms', resistance_ohms: 0.5 });
+    const user = userEvent.setup();
+
+    render(<PcbProbeView deviceId="voltage_divider_01" />);
+    await screen.findByText('Simple Voltage Divider — PCB view');
+
+    await user.click(screen.getByRole('button', { name: '•)))' }));
+
+    // no leads placed yet (jsdom has no real WebGL/raycasting to place one --
+    // see the "tap that lands without a resolvable board point" test above),
+    // so nothing to measure yet; this just confirms the mode switch itself
+    // doesn't crash or call measure prematurely.
+    expect(await screen.findByTestId('multimeter-display')).toHaveTextContent('— —');
+    expect(measureSpy).not.toHaveBeenCalled();
+  });
+
+  it('clears both leads when the multimeter reset button is clicked', async () => {
+    vi.spyOn(api, 'getDevice').mockResolvedValue(DEVICE);
+    vi.spyOn(api, 'deviceAssetUrl').mockReturnValue('/pcb.glb');
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+
+    render(<PcbProbeView deviceId="voltage_divider_01" />);
+    await screen.findByText('Simple Voltage Divider — PCB view');
+
+    fireEvent.click(screen.getByTestId('multimeter-reset'));
+
+    expect(screen.getByTestId('lead-jack-red')).not.toHaveClass('placed');
+    expect(screen.getByTestId('lead-jack-black')).not.toHaveClass('placed');
+  });
+
+  describe('portal targets', () => {
+    it('portals the title, round controls, and difficulty picker into the given elements instead of rendering them inline', async () => {
+      vi.spyOn(api, 'getDevice').mockResolvedValue(DEVICE);
+      vi.spyOn(api, 'deviceAssetUrl').mockReturnValue('/pcb.glb');
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+
+      const titleTarget = document.createElement('div');
+      const actionsTarget = document.createElement('div');
+      const menuTarget = document.createElement('div');
+      document.body.append(titleTarget, actionsTarget, menuTarget);
+
+      render(
+        <PcbProbeView
+          deviceId="voltage_divider_01"
+          titlePortalTarget={titleTarget}
+          actionsPortalTarget={actionsTarget}
+          menuPortalTarget={menuTarget}
+        />,
+      );
+
+      await waitFor(() => expect(titleTarget).toHaveTextContent('Simple Voltage Divider — PCB view'));
+      expect(actionsTarget.querySelector('button')).toHaveTextContent('New Fault');
+      expect(menuTarget.querySelector('select')).toBeInTheDocument();
+
+      titleTarget.remove();
+      actionsTarget.remove();
+      menuTarget.remove();
+    });
   });
 });

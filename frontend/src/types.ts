@@ -63,6 +63,13 @@ export interface Device {
 
 export type DmmMode = 'voltage' | 'ohms' | 'diode';
 
+// The multimeter's own mode dial: every DmmMode (a real backend /measure
+// mode) plus 'continuity', which is purely a frontend display/beep-threshold
+// layer over an 'ohms' measurement -- see continuity.ts and dmmDisplay.ts's
+// apiDmmMode. Kept distinct from DmmMode so the wire protocol never has to
+// know about a mode that isn't really its own.
+export type MultimeterMode = DmmMode | 'continuity';
+
 export interface MeasureResult {
   fault_id: string;
   mode: DmmMode;

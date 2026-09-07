@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from './api';
 import { SchematicProbeView } from './SchematicProbeView';
 import { placeLead } from './test/placeLead';
@@ -258,5 +258,111 @@ describe('SchematicProbeView', () => {
 
     await waitFor(() => expect(measureSpy).toHaveBeenCalledWith('voltage_divider_01', ['VIN', 'VOUT'], 'r1_open', 'ohms'));
     expect(await screen.findByTestId('multimeter-display')).toHaveTextContent('666.7 Ω');
+  });
+
+  it('switching to continuity mode measures via the real ohms wire mode', async () => {
+    const measureSpy = vi
+      .spyOn(api, 'measure')
+      .mockImplementation((_deviceId, _nodes, faultId, mode) => {
+        if (mode === 'ohms') return Promise.resolve({ fault_id: faultId, mode: 'ohms', resistance_ohms: 0.5 });
+        return Promise.resolve(RESULTS[faultId]);
+      });
+    const user = userEvent.setup();
+
+    render(<SchematicProbeView deviceId="voltage_divider_01" />);
+    await screen.findByText('Simple Voltage Divider');
+    placeBothProbes();
+    await waitForDisplay('9.000 V');
+
+    await user.click(screen.getByRole('button', { name: '•)))' }));
+
+    await waitFor(() => expect(measureSpy).toHaveBeenCalledWith('voltage_divider_01', ['VIN', 'VOUT'], 'r1_open', 'ohms'));
+    expect(await screen.findByTestId('multimeter-display')).toHaveTextContent('•))) 0.5 Ω');
+  });
+
+  it('clears both leads when the multimeter reset button is clicked', async () => {
+    render(<SchematicProbeView deviceId="voltage_divider_01" />);
+
+    await screen.findByText('Simple Voltage Divider');
+    placeBothProbes();
+    await waitForDisplay('9.000 V');
+
+    fireEvent.click(screen.getByTestId('multimeter-reset'));
+
+    expect(screen.getByTestId('lead-jack-red')).not.toHaveClass('placed');
+    expect(screen.getByTestId('lead-jack-black')).not.toHaveClass('placed');
+    expect(screen.queryByTestId('lead-red')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('lead-black')).not.toBeInTheDocument();
+  });
+
+  describe('portal targets', () => {
+    it('portals the title, round controls, and difficulty picker into the given elements instead of rendering them inline', async () => {
+      const titleTarget = document.createElement('div');
+      const actionsTarget = document.createElement('div');
+      const menuTarget = document.createElement('div');
+      document.body.append(titleTarget, actionsTarget, menuTarget);
+
+      render(
+        <SchematicProbeView
+          deviceId="voltage_divider_01"
+          titlePortalTarget={titleTarget}
+          actionsPortalTarget={actionsTarget}
+          menuPortalTarget={menuTarget}
+        />,
+      );
+
+      await waitFor(() => expect(titleTarget).toHaveTextContent('Simple Voltage Divider'));
+      expect(actionsTarget.querySelector('button')).toHaveTextContent('New Fault');
+      expect(menuTarget.querySelector('select')).toBeInTheDocument();
+
+      titleTarget.remove();
+      actionsTarget.remove();
+      menuTarget.remove();
+    });
+  });
+
+  describe('long-press-drag reposition', () => {
+    beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+    afterEach(() => vi.useRealTimers());
+
+    it('moves an already-placed lead to a new point via long-press-drag, without re-arming it', async () => {
+      const measureSpy = vi.spyOn(api, 'measure');
+      render(<SchematicProbeView deviceId="voltage_divider_01" />);
+
+      await screen.findByText('Simple Voltage Divider');
+      placeBothProbes(); // red -> VIN (TP1), black -> VOUT (TP2)
+      await waitForDisplay('9.000 V');
+
+      const redMarker = screen.getByTestId('lead-red');
+      fireEvent.pointerDown(redMarker, { clientX: TP1_PX.x, clientY: TP1_PX.y });
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+      });
+      fireEvent.pointerMove(redMarker, { clientX: TP3_PX.x, clientY: TP3_PX.y });
+      fireEvent.pointerUp(redMarker, { clientX: TP3_PX.x, clientY: TP3_PX.y });
+
+      // the jack was never re-armed; red just moved from VIN to the GND (TP3) node
+      expect(screen.getByTestId('lead-jack-red')).not.toHaveClass('armed');
+      await waitFor(() => expect(measureSpy).toHaveBeenCalledWith('voltage_divider_01', ['0', 'VOUT'], 'r1_open', 'voltage'));
+    });
+
+    it('does not move the lead on a plain quick tap (below the long-press threshold)', async () => {
+      const measureSpy = vi.spyOn(api, 'measure');
+      render(<SchematicProbeView deviceId="voltage_divider_01" />);
+
+      await screen.findByText('Simple Voltage Divider');
+      placeBothProbes();
+      await waitForDisplay('9.000 V');
+      measureSpy.mockClear();
+
+      const redMarker = screen.getByTestId('lead-red');
+      fireEvent.pointerDown(redMarker, { clientX: TP1_PX.x, clientY: TP1_PX.y });
+      await act(async () => {
+        vi.advanceTimersByTime(200); // well under the 400ms hold threshold
+      });
+      fireEvent.pointerUp(redMarker, { clientX: TP1_PX.x, clientY: TP1_PX.y });
+
+      expect(measureSpy).not.toHaveBeenCalled();
+    });
   });
 });

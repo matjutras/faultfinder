@@ -1,4 +1,4 @@
-import type { DmmMode, MeasureResult } from './types';
+import type { MeasureResult, MultimeterMode } from './types';
 
 // Where a tapped lead landed -- a pin, a pad, or a point along a wire/track
 // (see dropTargets.ts). `targetId` identifies what it resolved to; `node` is
@@ -41,7 +41,7 @@ export function selectedNodes(leads: Leads): [string, string] | null {
 // tracked alongside the result instead of inferred from its contents.
 export interface Measurement {
   nodes: [string, string];
-  mode: DmmMode;
+  mode: MultimeterMode;
   result: MeasureResult;
 }
 
@@ -52,7 +52,7 @@ export interface Measurement {
 // out. Rendering that stale measurement would show a reading for the wrong
 // probes/mode -- so callers must render through this instead of the fetched
 // result directly.
-export function visibleResult(measurement: Measurement | null, leads: Leads, mode: DmmMode): MeasureResult | null {
+export function visibleResult(measurement: Measurement | null, leads: Leads, mode: MultimeterMode): MeasureResult | null {
   const nodes = selectedNodes(leads);
   if (!measurement || !nodes) return null;
   if (measurement.mode !== mode) return null;

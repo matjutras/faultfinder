@@ -1,12 +1,16 @@
+import { useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import './Multimeter.css';
 import type { LeadColor } from './probeSelection';
+import type { MultimeterMode } from './types';
 
-export type MultimeterMode = 'voltage' | 'ohms' | 'diode';
+export type { MultimeterMode } from './types';
 
 const MODES: { id: MultimeterMode; label: string }[] = [
   { id: 'voltage', label: 'V' },
   { id: 'ohms', label: 'Ω' },
   { id: 'diode', label: '➞|' },
+  { id: 'continuity', label: '•)))' },
 ];
 
 interface Props {
@@ -17,6 +21,7 @@ interface Props {
   blackPlaced: boolean;
   armedLead: LeadColor | null;
   onLeadClick: (color: LeadColor) => void;
+  onReset?: () => void;
 }
 
 // A literal multimeter graphic: a mode selector, a digital display, and two
@@ -29,9 +34,61 @@ interface Props {
 // multimeter's leads are wired to the meter and moved by hand one at a time
 // anyway, so click-to-arm/tap-to-place is the closer analogue, not a
 // downgrade from "more physical."
-export function Multimeter({ mode, onModeChange, display, redPlaced, blackPlaced, armedLead, onLeadClick }: Props) {
+export function Multimeter({
+  mode,
+  onModeChange,
+  display,
+  redPlaced,
+  blackPlaced,
+  armedLead,
+  onLeadClick,
+  onReset = () => {},
+}: Props) {
+  // Repositioning the meter graphic itself on the canvas (milestone 11) --
+  // an offset from wherever the CSS anchors the overlay by default, dragged
+  // from a dedicated handle strip so it doesn't fight the mode/jack buttons'
+  // own clicks. Not persisted across a device switch/remount, same as every
+  // other per-round UI state here.
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const dragOrigin = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+
+  function onHandlePointerDown(e: ReactPointerEvent) {
+    e.stopPropagation();
+    dragOrigin.current = { x: e.clientX, y: e.clientY, offsetX: offset.x, offsetY: offset.y };
+    // jsdom (the test environment) has no Pointer Events capture at all --
+    // optional-chained so a real browser still gets capture (keeps the drag
+    // tracking the pointer even if it briefly leaves the small handle strip)
+    // without every test needing a capture stub.
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  }
+
+  function onHandlePointerMove(e: ReactPointerEvent) {
+    const origin = dragOrigin.current;
+    if (!origin) return;
+    e.stopPropagation();
+    setOffset({ x: origin.offsetX + (e.clientX - origin.x), y: origin.offsetY + (e.clientY - origin.y) });
+  }
+
+  function onHandlePointerUp(e: ReactPointerEvent) {
+    e.stopPropagation();
+    dragOrigin.current = null;
+  }
+
   return (
-    <div className="multimeter">
+    <div
+      className="multimeter"
+      style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
+      data-testid="multimeter"
+    >
+      <div
+        className="multimeter-handle"
+        data-testid="multimeter-handle"
+        title="Drag to move the multimeter"
+        onPointerDown={onHandlePointerDown}
+        onPointerMove={onHandlePointerMove}
+        onPointerUp={onHandlePointerUp}
+        onPointerCancel={onHandlePointerUp}
+      />
       <div className="multimeter-display" data-testid="multimeter-display">
         {display}
       </div>
@@ -66,6 +123,9 @@ export function Multimeter({ mode, onModeChange, display, redPlaced, blackPlaced
           onClick={() => onLeadClick('black')}
         />
       </div>
+      <button type="button" className="multimeter-reset" data-testid="multimeter-reset" title="Clear both leads" onClick={onReset}>
+        Clear leads
+      </button>
     </div>
   );
 }

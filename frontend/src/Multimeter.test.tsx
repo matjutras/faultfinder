@@ -90,4 +90,72 @@ describe('Multimeter', () => {
     expect(screen.getByTestId('lead-jack-red')).not.toHaveClass('armed');
     expect(screen.getByTestId('lead-jack-red')).toHaveAttribute('aria-pressed', 'false');
   });
+
+  it('offers a continuity mode alongside voltage/ohms/diode', () => {
+    render(
+      <Multimeter
+        mode="continuity"
+        onModeChange={vi.fn()}
+        display="0L"
+        redPlaced={false}
+        blackPlaced={false}
+        armedLead={null}
+        onLeadClick={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: '•)))' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('calls onReset when the clear-leads button is clicked', () => {
+    const onReset = vi.fn();
+    render(
+      <Multimeter
+        mode="voltage"
+        onModeChange={vi.fn()}
+        display=""
+        redPlaced={true}
+        blackPlaced={true}
+        armedLead={null}
+        onLeadClick={vi.fn()}
+        onReset={onReset}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('multimeter-reset'));
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw when the clear-leads button is clicked with no onReset given', () => {
+    render(
+      <Multimeter
+        mode="voltage"
+        onModeChange={vi.fn()}
+        display=""
+        redPlaced={false}
+        blackPlaced={false}
+        armedLead={null}
+        onLeadClick={vi.fn()}
+      />,
+    );
+    expect(() => fireEvent.click(screen.getByTestId('multimeter-reset'))).not.toThrow();
+  });
+
+  it('is repositioned by dragging its handle', () => {
+    render(
+      <Multimeter
+        mode="voltage"
+        onModeChange={vi.fn()}
+        display=""
+        redPlaced={false}
+        blackPlaced={false}
+        armedLead={null}
+        onLeadClick={vi.fn()}
+      />,
+    );
+    const handle = screen.getByTestId('multimeter-handle');
+    fireEvent.pointerDown(handle, { clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(handle, { clientX: 130, clientY: 115 });
+    fireEvent.pointerUp(handle, { clientX: 130, clientY: 115 });
+
+    expect(screen.getByTestId('multimeter')).toHaveStyle('transform: translate(30px, 15px)');
+  });
 });

@@ -1,0 +1,121 @@
+/* Milestone 11 UI overhaul: the probe canvas fills the full viewport instead
+   of sitting in a small fixed box -- see SchematicProbeView.css for how the
+   canvas itself fills .canvas-area. This shell only owns the slim
+   always-visible top bar (New Fault/Reveal fault/score -- portaled in from
+   whichever ProbeView is mounted, see App.tsx) and the collapsible menu
+   (device/difficulty/view toggle), both overlaid on top of the canvas rather
+   than pushing it down, so the canvas genuinely reaches every edge. */
+.app-shell {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  /* index.css's #root (a leftover template style, centered/text-align:center
+     for a marketing-page layout) still inherits into this fixed-position
+     overlay regardless of #root's own box being fully covered -- reset it so
+     toolbar buttons/labels don't inherit center-alignment. */
+  text-align: left;
+}
+
+.app-error {
+  padding: 2rem;
+}
+
+.canvas-area {
+  position: absolute;
+  inset: 0;
+}
+
+.topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg, #fff);
+  border-bottom: 1px solid var(--border, #e5e4e7);
+}
+
+@media (prefers-color-scheme: dark) {
+  .topbar {
+    background: rgba(22, 23, 29, 0.92);
+  }
+}
+
+.hamburger-button {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border, #e5e4e7);
+  background: transparent;
+  color: var(--text-h, #08060d);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.topbar-title {
+  flex: 0 0 auto;
+}
+
+.topbar-title h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.topbar-actions .revealed-fault {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.score-bar {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  color: var(--text-h, #08060d);
+  white-space: nowrap;
+}
+
+.menu-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  background: transparent;
+}
+
+.menu-drawer {
+  display: none;
+  position: absolute;
+  top: 48px;
+  left: 8px;
+  z-index: 30;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  min-width: 200px;
+  border-radius: 0.5rem;
+  background: var(--bg, #fff);
+  border: 1px solid var(--border, #e5e4e7);
+  box-shadow: var(--shadow, 0 10px 15px -3px rgba(0, 0, 0, 0.1));
+}
+
+.menu-drawer.open {
+  display: flex;
+}
+
+.view-toggle {
+  display: flex;
+  gap: 0.5rem;
+}

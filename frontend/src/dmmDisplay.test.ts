@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDmmReading } from './dmmDisplay';
+import { apiDmmMode, formatDmmReading } from './dmmDisplay';
 import type { MeasureResult } from './types';
 
 describe('formatDmmReading', () => {
@@ -40,5 +40,32 @@ describe('formatDmmReading', () => {
   it('shows 0L for an open diode reading', () => {
     const result: MeasureResult = { fault_id: 'healthy', mode: 'diode', diode_forward_volts: null };
     expect(formatDmmReading('diode', result)).toBe('0L');
+  });
+
+  it('shows a beep indicator plus the reading for a continuous (low-resistance) continuity result', () => {
+    const result: MeasureResult = { fault_id: 'healthy', mode: 'ohms', resistance_ohms: 0.8 };
+    expect(formatDmmReading('continuity', result)).toBe('•))) 0.8 Ω');
+  });
+
+  it('shows the plain reading, no beep indicator, for a continuity result above the threshold', () => {
+    const result: MeasureResult = { fault_id: 'healthy', mode: 'ohms', resistance_ohms: 4700 };
+    expect(formatDmmReading('continuity', result)).toBe('4.70 kΩ');
+  });
+
+  it('shows 0L for an open continuity reading', () => {
+    const result: MeasureResult = { fault_id: 'healthy', mode: 'ohms', resistance_ohms: null };
+    expect(formatDmmReading('continuity', result)).toBe('0L');
+  });
+});
+
+describe('apiDmmMode', () => {
+  it('maps continuity to the real ohms wire mode', () => {
+    expect(apiDmmMode('continuity')).toBe('ohms');
+  });
+
+  it('passes every real DmmMode through unchanged', () => {
+    expect(apiDmmMode('voltage')).toBe('voltage');
+    expect(apiDmmMode('ohms')).toBe('ohms');
+    expect(apiDmmMode('diode')).toBe('diode');
   });
 });
