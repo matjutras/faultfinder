@@ -296,27 +296,18 @@ describe('SchematicProbeView', () => {
   });
 
   describe('portal targets', () => {
-    it('portals the title, round controls, and difficulty picker into the given elements instead of rendering them inline', async () => {
+    it('portals the title into its own target, and round controls + difficulty picker into the menu target, instead of rendering them inline', async () => {
       const titleTarget = document.createElement('div');
-      const actionsTarget = document.createElement('div');
       const menuTarget = document.createElement('div');
-      document.body.append(titleTarget, actionsTarget, menuTarget);
+      document.body.append(titleTarget, menuTarget);
 
-      render(
-        <SchematicProbeView
-          deviceId="voltage_divider_01"
-          titlePortalTarget={titleTarget}
-          actionsPortalTarget={actionsTarget}
-          menuPortalTarget={menuTarget}
-        />,
-      );
+      render(<SchematicProbeView deviceId="voltage_divider_01" titlePortalTarget={titleTarget} menuPortalTarget={menuTarget} />);
 
       await waitFor(() => expect(titleTarget).toHaveTextContent('Simple Voltage Divider'));
-      expect(actionsTarget.querySelector('button')).toHaveTextContent('New Fault');
+      expect(menuTarget.querySelector('button')).toHaveTextContent('New Fault');
       expect(menuTarget.querySelector('select')).toBeInTheDocument();
 
       titleTarget.remove();
-      actionsTarget.remove();
       menuTarget.remove();
     });
   });

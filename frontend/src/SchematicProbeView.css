@@ -66,8 +66,15 @@
 
 .multimeter-overlay {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  /* Below the top bar, not a fixed 12px from the very top of the canvas --
+     see App.css's own top-of-file note: the top bar is absolutely
+     positioned (not in normal flow), so overlapping/hiding whatever sits
+     underneath it is a real failure mode this survived once already
+     (New Fault/Reveal fault wrapping to two lines on a phone). --topbar-
+     height (set on .app-shell, inherited down) is the one place that
+     height is defined, kept in sync with .topbar's own CSS. */
+  top: calc(var(--topbar-height, 44px) + 8px);
+  right: 8px;
   z-index: 20;
 }
 

@@ -24,18 +24,21 @@ function App() {
 
   // Portal targets for whichever ProbeView is currently mounted -- it still
   // owns the title/round-controls/difficulty state, but renders that content
-  // here, in the shell's always-visible top bar and collapsible menu
-  // (milestone 11), instead of inline next to its own canvas. Plain refs
-  // won't do: a portal target has to actually exist in state (so the
-  // subsequent render that has it can pass it down) before a child can
-  // portal into it, and these divs are always mounted (see App.css --
-  // .menu-drawer is hidden with a CSS class, not by unmounting) specifically
-  // so a target is never transiently null while the menu is merely closed --
-  // see SchematicProbeView.tsx's identical props for why that matters (a
-  // null target falls back to inline rendering, which would otherwise make
-  // the difficulty picker flash into the canvas every time the menu closes).
+  // here: the device name in the always-visible top bar, and New Fault/
+  // Reveal fault/difficulty all in the collapsible menu (milestone 11, then
+  // moved from the top bar into the menu after a real phone screenshot
+  // showed those two buttons wrapping and overlapping the multimeter
+  // overlay underneath -- the top bar now only ever holds the hamburger,
+  // title, and score, which reliably fits on one line). Plain refs won't
+  // do: a portal target has to actually exist in state (so the subsequent
+  // render that has it can pass it down) before a child can portal into
+  // it, and these divs are always mounted (see App.css -- .menu-drawer is
+  // hidden with a CSS class, not by unmounting) specifically so a target is
+  // never transiently null while the menu is merely closed -- see
+  // SchematicProbeView.tsx's identical props for why that matters (a null
+  // target falls back to inline rendering, which would otherwise make the
+  // difficulty picker flash into the canvas every time the menu closes).
   const [titleEl, setTitleEl] = useState<HTMLDivElement | null>(null);
-  const [actionsEl, setActionsEl] = useState<HTMLDivElement | null>(null);
   const [menuEl, setMenuEl] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -70,7 +73,6 @@ function App() {
     deviceId,
     onGuess,
     titlePortalTarget: titleEl,
-    actionsPortalTarget: actionsEl,
     menuPortalTarget: menuEl,
   };
 
@@ -88,7 +90,6 @@ function App() {
           ☰
         </button>
         <div className="topbar-title" ref={setTitleEl} />
-        <div className="topbar-actions" ref={setActionsEl} />
         <p className="score-bar">
           Solved: {score.solved}/{score.attempts} &middot; Streak: {score.currentStreak} (best {score.bestStreak})
         </p>

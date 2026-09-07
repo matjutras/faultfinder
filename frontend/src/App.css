@@ -1,14 +1,29 @@
 /* Milestone 11 UI overhaul: the probe canvas fills the full viewport instead
    of sitting in a small fixed box -- see SchematicProbeView.css for how the
    canvas itself fills .canvas-area. This shell only owns the slim
-   always-visible top bar (New Fault/Reveal fault/score -- portaled in from
-   whichever ProbeView is mounted, see App.tsx) and the collapsible menu
-   (device/difficulty/view toggle), both overlaid on top of the canvas rather
-   than pushing it down, so the canvas genuinely reaches every edge. */
+   always-visible top bar (hamburger/device name/score only -- see App.tsx)
+   and the collapsible menu (device/difficulty/view toggle, plus New Fault/
+   Reveal fault, portaled in from whichever ProbeView is mounted), both
+   overlaid on top of the canvas rather than pushing it down, so the canvas
+   genuinely reaches every edge.
+
+   The top bar used to also hold New Fault/Reveal fault, but a real phone
+   screenshot showed that content wrapping to two lines on a narrow
+   viewport -- the top bar is `position: absolute`, not in normal flow, so
+   growing past its assumed one-line height didn't push anything down, it
+   just silently overlapped and hid the top of .multimeter-overlay (a
+   higher z-index) underneath it. Moving those buttons into the menu is the
+   real fix (so the bar only ever holds a fixed-width hamburger button plus
+   a title that truncates instead of wrapping); --topbar-height below (read
+   by .multimeter-overlay's own top offset in SchematicProbeView.css, kept
+   in sync with .topbar's own min-height) is what lets that offset assume a
+   safe, known-empty gap under the bar instead of a guessed fixed pixel
+   value. */
 .app-shell {
   position: fixed;
   inset: 0;
   overflow: hidden;
+  --topbar-height: 44px;
   /* index.css's #root (a leftover template style, centered/text-align:center
      for a marketing-page layout) still inherits into this fixed-position
      overlay regardless of #root's own box being fully covered -- reset it so
@@ -33,8 +48,11 @@
   z-index: 30;
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
+  height: var(--topbar-height);
+  box-sizing: border-box;
+  padding: 0 0.75rem;
   background: var(--bg, #fff);
   border-bottom: 1px solid var(--border, #e5e4e7);
 }
@@ -58,34 +76,42 @@
 }
 
 .topbar-title {
-  flex: 0 0 auto;
+  /* Grows to fill whatever space the fixed-width hamburger/score-bar don't
+     need, and truncates instead of wrapping -- with New Fault/Reveal fault
+     moved into the menu (see App.tsx), this and the score are the only two
+     things left fighting for space, so a long device name on a narrow
+     phone screen shortens to an ellipsis rather than pushing the score off
+     the bar or wrapping the bar to a second line (see this file's own
+     top-of-file note for why a second line is a real problem, not just
+     visual noise). */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .topbar-title h2 {
   margin: 0;
   font-size: 1.05rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.topbar-actions {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.topbar-actions .revealed-fault {
-  margin: 0;
-  font-size: 0.85rem;
 }
 
 .score-bar {
   flex: 0 0 auto;
   font-family: var(--mono);
+  font-size: 0.85rem;
   color: var(--text-h, #08060d);
   white-space: nowrap;
+}
+
+@media (max-width: 380px) {
+  /* A narrow phone (see this file's top-of-file note): shrinking the
+     score text a bit further guarantees it fits alongside the hamburger
+     button even when the title has truncated down to just an ellipsis. */
+  .score-bar {
+    font-size: 0.72rem;
+  }
 }
 
 .menu-backdrop {
@@ -98,7 +124,7 @@
 .menu-drawer {
   display: none;
   position: absolute;
-  top: 48px;
+  top: calc(var(--topbar-height) + 4px);
   left: 8px;
   z-index: 30;
   flex-direction: column;

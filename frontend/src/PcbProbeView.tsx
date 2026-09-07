@@ -29,11 +29,10 @@ interface Props {
   deviceId: string;
   onGuess?: (correct: boolean, firstTryThisRound: boolean) => void;
   // See SchematicProbeView.tsx's identical props: portals the device-name
-  // heading/round controls/difficulty picker into App.tsx's shared slim bar
-  // and menu (milestone 11) when given, else renders them inline (every
-  // existing unit test's mode).
+  // heading into App.tsx's shared slim bar, and round controls/difficulty
+  // into its collapsible menu (milestone 11) when given, else renders them
+  // inline (every existing unit test's mode).
   titlePortalTarget?: HTMLElement | null;
-  actionsPortalTarget?: HTMLElement | null;
   menuPortalTarget?: HTMLElement | null;
 }
 
@@ -130,7 +129,7 @@ export function LeadIndicator({
   );
 }
 
-export function PcbProbeView({ deviceId, onGuess = () => {}, titlePortalTarget, actionsPortalTarget, menuPortalTarget }: Props) {
+export function PcbProbeView({ deviceId, onGuess = () => {}, titlePortalTarget, menuPortalTarget }: Props) {
   const [device, setDevice] = useState<Device | null>(null);
   const [leads, setLeads] = useState<Leads>(EMPTY_LEADS);
   const [armedLead, setArmedLead] = useState<LeadColor | null>(null);
@@ -281,7 +280,7 @@ export function PcbProbeView({ deviceId, onGuess = () => {}, titlePortalTarget, 
     <div className="schematic-probe-view">
       {titlePortalTarget ? createPortal(title, titlePortalTarget) : title}
 
-      {actionsPortalTarget ? createPortal(roundControls, actionsPortalTarget) : roundControls}
+      {menuPortalTarget ? createPortal(roundControls, menuPortalTarget) : roundControls}
       {menuPortalTarget ? createPortal(difficultyControl, menuPortalTarget) : difficultyControl}
 
       <div className="probe-workspace">

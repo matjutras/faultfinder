@@ -35,14 +35,16 @@ const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard', 'random'];
 interface Props {
   deviceId: string;
   onGuess?: (correct: boolean, firstTryThisRound: boolean) => void;
-  // Where to portal the device-name heading, the round controls (New Fault/
-  // Reveal fault), and the difficulty picker, so App.tsx's slim
-  // always-visible bar and collapsible menu (milestone 11) can host controls
-  // this component still owns the state for. Left undefined (as every
-  // existing unit test renders this component) renders them inline in their
-  // old spot instead -- this component works standalone either way.
+  // Where to portal the device-name heading (App.tsx's slim always-visible
+  // bar) and everything else this component still owns the state for --
+  // round controls (New Fault/Reveal fault) and the difficulty picker --
+  // into App.tsx's collapsible menu (milestone 11; round controls moved
+  // from the always-visible bar into the menu after a real phone
+  // screenshot showed them wrapping and overlapping the multimeter overlay
+  // underneath). Left undefined (as every existing unit test renders this
+  // component) renders them inline in their old spot instead -- this
+  // component works standalone either way.
   titlePortalTarget?: HTMLElement | null;
-  actionsPortalTarget?: HTMLElement | null;
   menuPortalTarget?: HTMLElement | null;
 }
 
@@ -50,7 +52,6 @@ export function SchematicProbeView({
   deviceId,
   onGuess = () => {},
   titlePortalTarget,
-  actionsPortalTarget,
   menuPortalTarget,
 }: Props) {
   const [device, setDevice] = useState<Device | null>(null);
@@ -177,7 +178,7 @@ export function SchematicProbeView({
     <div className="schematic-probe-view">
       {titlePortalTarget ? createPortal(<h2>{device.name}</h2>, titlePortalTarget) : <h2>{device.name}</h2>}
 
-      {actionsPortalTarget ? createPortal(roundControls, actionsPortalTarget) : roundControls}
+      {menuPortalTarget ? createPortal(roundControls, menuPortalTarget) : roundControls}
       {menuPortalTarget ? createPortal(difficultyControl, menuPortalTarget) : difficultyControl}
 
       <div className="probe-workspace">

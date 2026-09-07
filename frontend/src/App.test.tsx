@@ -184,10 +184,22 @@ describe('App', () => {
     expect(hamburger).toHaveAttribute('aria-expanded', 'false');
   });
 
-  it("always-visible controls (New Fault, Reveal fault, score) render regardless of the collapsible menu's state", async () => {
-    // Milestone 11's whole split: New Fault/Reveal fault/score must be usable
-    // every round without opening the menu -- device/difficulty/view toggle
-    // are the ones tucked away.
+  it('the score bar is always visible in the top bar, independent of the menu', async () => {
+    // The one truly-always-visible piece of round state: unlike New Fault/
+    // Reveal fault (moved into the menu -- see below -- after a real phone
+    // screenshot showed them wrapping and overlapping the multimeter
+    // overlay when they lived in this same top bar), the score is plain
+    // read-only text with no interaction to collide with anything.
+    vi.spyOn(api, 'listDevices').mockResolvedValue(DEVICE_LIST);
+    vi.spyOn(api, 'getDevice').mockResolvedValue(DEVICE);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Simple Voltage Divider' });
+
+    expect(screen.getByText(/Solved: 0\/0/)).toBeInTheDocument();
+  });
+
+  it('portals New Fault/Reveal fault and the difficulty picker into the collapsible menu', async () => {
     vi.spyOn(api, 'listDevices').mockResolvedValue(DEVICE_LIST);
     vi.spyOn(api, 'getDevice').mockResolvedValue(DEVICE);
 
@@ -196,16 +208,6 @@ describe('App', () => {
 
     expect(screen.getByRole('button', { name: 'New Fault' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reveal fault' })).toBeInTheDocument();
-    expect(screen.getByText(/Solved: 0\/0/)).toBeInTheDocument();
-  });
-
-  it('portals the difficulty picker into the collapsible menu', async () => {
-    vi.spyOn(api, 'listDevices').mockResolvedValue(DEVICE_LIST);
-    vi.spyOn(api, 'getDevice').mockResolvedValue(DEVICE);
-
-    render(<App />);
-    await screen.findByRole('heading', { name: 'Simple Voltage Divider' });
-
     expect(screen.getByLabelText('Difficulty:')).toBeInTheDocument();
   });
 });
