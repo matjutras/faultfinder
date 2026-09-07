@@ -64,3 +64,44 @@ def test_parse_components_reads_source_nodes_despite_trailing_dc_directive():
 
 def test_generate_fault_pool_is_deterministic():
     assert fault_gen.generate_fault_pool(CIRCUIT) == fault_gen.generate_fault_pool(CIRCUIT)
+
+
+MOSFET_CIRCUIT = """\
+* discrete P-MOSFET reverse-polarity protection, minimal
+V1 VIN 0 DC 9
+R1 GATE 0 100k
+M1 VIN GATE VOUT VOUT PMOSMOD
+.model PMOSMOD PMOS
+.end
+"""
+
+
+def test_parse_components_reads_all_four_mosfet_nodes_not_the_model_name():
+    # Regression test: before the "M" case existed, parse_components fell
+    # through to the generic branch and treated the trailing model name
+    # ("PMOSMOD") as a 5th node -- which _net_pair_faults then turned into a
+    # bogus short-to-model-name fault tying a real net to a phantom,
+    # single-connection node ngspice can't solve.
+    components = fault_gen.parse_components(MOSFET_CIRCUIT)
+    m1 = next(c for c in components if c.ref == "M1")
+    assert m1.nodes == ["VIN", "GATE", "VOUT", "VOUT"]
+    assert m1.value is None
+    assert not any("PMOSMOD" in f["patch"][0].get("between", []) for f in fault_gen.generate_fault_pool(MOSFET_CIRCUIT))
+
+
+def test_mosfet_generates_drain_open_and_drain_source_leaky_short():
+    # Not gate-open: verified against a real ngspice run on reverse_polarity_08
+    # that a gate-open fault is a silent no-op when the healthy circuit already
+    # biases the gate near ground through a resistor (an ideal MOSFET model
+    # draws zero DC gate current either way) -- see fault_gen.py's own comment.
+    pool = fault_gen.generate_fault_pool(MOSFET_CIRCUIT)
+    ids = {f["id"] for f in pool}
+    assert "m1_open" in ids
+    assert "m1_leaky_short" in ids
+    assert "m1_gate_open" not in ids
+
+    drain_open = next(f for f in pool if f["id"] == "m1_open")
+    assert drain_open["patch"] == [{"op": "open_pin", "ref": "M1", "pin": 1}]
+
+    leaky = next(f for f in pool if f["id"] == "m1_leaky_short")
+    assert leaky["patch"] == [{"op": "add_short", "between": ["VIN", "VOUT"], "resistance": "1k"}]

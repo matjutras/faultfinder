@@ -98,9 +98,13 @@ def _segments_intersect(p1, p2, p3, p4):
             or (o3 == 0 and _on_segment(p3, p4, p1)) or (o4 == 0 and _on_segment(p3, p4, p2)))
 
 
+# KiCad 10's pcbnew writes a segment's net code quoted (`(net "0")`) where
+# KiCad 9 wrote it bare (`(net 3)`) -- confirmed against a real build_pcb.py
+# run after the KiCad 9->10 upgrade; the quotes are optional here so this
+# regex matches either file-format version's output.
 _SEGMENT_RE = re.compile(
     r'\(segment\s*\(start ([-\d.]+) ([-\d.]+)\)\s*\(end ([-\d.]+) ([-\d.]+)\)\s*'
-    r'\(width [\d.]+\)\s*\(layer "([^"]+)"\)\s*\(net (\d+)\)'
+    r'\(width [\d.]+\)\s*\(layer "([^"]+)"\)\s*\(net "?(\d+)"?\)'
 )
 
 

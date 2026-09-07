@@ -118,6 +118,25 @@ try {
   });
   console.log('PCB canvas:', canvasSample);
 
+  // Bottom-of-board check: OrbitControls' polar angle is unrestricted enough
+  // (minPolarAngle=0.05, maxPolarAngle=Math.PI-0.05, see PcbProbeView.tsx) to
+  // flip past horizontal and view the board's underside -- verify that's
+  // actually reachable by dragging, not just that the prop is set. A
+  // container-height drag maps to a full 2*pi polar rotation (three.js
+  // OrbitControls default rotateSpeed=1), so step in increments rather than
+  // one big drag, which would overshoot back to the starting view.
+  const pcbBox = await page.locator('.pcb-stage canvas').boundingBox();
+  const pcx = pcbBox.x + pcbBox.width / 2;
+  await page.mouse.move(pcx, pcbBox.y + pcbBox.height / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) {
+    await page.mouse.move(pcx, pcbBox.y + pcbBox.height / 2 - i * (pcbBox.height / 16), { steps: 5 });
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${outDir}/${deviceId}-pcb-bottom.png` });
+  console.log(`PCB bottom-view screenshot: ${outDir}/${deviceId}-pcb-bottom.png`);
+
   console.log('\nDONE. Screenshots in', outDir);
 } finally {
   await browser.close();

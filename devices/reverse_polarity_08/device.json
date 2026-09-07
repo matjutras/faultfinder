@@ -1,0 +1,5 @@
+{
+  "id": "reverse_polarity_08",
+  "name": "SBK_RP1 Reverse Polarity Protection",
+  "schematic_sch": "reverse_polarity_08.kicad_sch"
+}

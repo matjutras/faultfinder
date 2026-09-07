@@ -1,0 +1,14 @@
+* SBK_RP1 Reverse Polarity Protection - FaultFinder device reverse_polarity_08
+* Real board (see NOTICE.md) takes power from an external battery at J1
+* (2-12 VDC per the source repo's own README); modeled here as an equivalent
+* DC source at VIN/GND, same simplification every other device in this
+* project makes at its own power input. 9V chosen as a representative point
+* within that range.
+V1 VIN 0 DC 9
+R1 Net__Q1_G_ 0 100k
+M1 VIN Net__Q1_G_ VOUT VOUT PMOSMOD
+D1 VOUT Net__D1_K_ LEDMOD
+R2 Net__D1_K_ 0 15k
+.model PMOSMOD PMOS
+.model LEDMOD D
+.end

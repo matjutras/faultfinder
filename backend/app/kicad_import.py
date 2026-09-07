@@ -27,6 +27,11 @@ Point = tuple[float, float]
 DEFAULT_PAGE_SIZE_MM: tuple[float, float] = (100.0, 110.0)  # every hand-authored device's own "(paper "User" 100 110)"
 
 # (portrait width, portrait height) in mm, per KiCad's own standard sheet sizes.
+# The US sizes were missing entirely until reverse_polarity_08 (a real
+# imported board declaring "(paper "USLetter" portrait)") silently fell back
+# to DEFAULT_PAGE_SIZE_MM -- 100x110mm, wildly wrong for an 8.5x11in sheet --
+# the exact page-size bug this table exists to prevent (see
+# parse_page_size_mm's own docstring), just never hit by an A-series device.
 STANDARD_PAPER_SIZES_MM: dict[str, tuple[float, float]] = {
     "A5": (148.0, 210.0),
     "A4": (210.0, 297.0),
@@ -34,6 +39,9 @@ STANDARD_PAPER_SIZES_MM: dict[str, tuple[float, float]] = {
     "A2": (420.0, 594.0),
     "A1": (594.0, 841.0),
     "A0": (841.0, 1189.0),
+    "USLetter": (215.9, 279.4),
+    "USLegal": (215.9, 355.6),
+    "USLedger": (279.4, 431.8),
 }
 
 

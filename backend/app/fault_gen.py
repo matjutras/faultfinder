@@ -47,12 +47,20 @@ def parse_components(circuit_text: str) -> list[Component]:
         # independent sources and diodes always have exactly 2 terminal nodes as
         # their first two arguments (sources may be followed by "DC <value>",
         # "AC ...", etc, which aren't nodes); BJTs have exactly 3 (collector,
-        # base, emitter). Everything else falls back to "trailing token is a
-        # plain numeric value" -- true for R/L/C, and a safe default otherwise.
+        # base, emitter); MOSFETs have exactly 4 (drain, gate, source, bulk) --
+        # found importing reverse_polarity_08's discrete P-MOSFET: without this
+        # case, the trailing model name (e.g. "PMOSMOD") was misparsed as a 5th
+        # "node", which _net_pair_faults then happily generated a bogus
+        # short-to-model-name fault for, tying a real net to a phantom
+        # single-connection node ngspice can't solve. Everything else falls
+        # back to "trailing token is a plain numeric value" -- true for R/L/C,
+        # and a safe default otherwise.
         if prefix in ("V", "I", "D"):
             nodes, value = tokens[1:3], None
         elif prefix == "Q":
             nodes, value = tokens[1:4], None
+        elif prefix == "M":
+            nodes, value = tokens[1:5], None
         elif len(tokens) > 1 and _NUMERIC_VALUE_RE.match(tokens[-1]):
             nodes, value = tokens[1:-1], tokens[-1]
         else:
@@ -107,6 +115,25 @@ def _per_component_faults(components: list[Component]) -> list[dict]:
                 faults.append(_fault(f"{c.ref}_junction_open", f"{c.ref} junction open (base)", "medium", "open_pin", [{"op": "open_pin", "ref": c.ref, "pin": 2}]))
             if len(c.nodes) >= 3:
                 faults.append(_fault(f"{c.ref}_leaky_short", f"{c.ref} leaky short (base-emitter)", "hard", "component_failed", [{"op": "add_short", "between": [c.nodes[1], c.nodes[2]], "resistance": "1k"}]))
+        elif c.prefix == "M":
+            # Node order is this project's own circuit.cir convention (drain,
+            # gate, source, bulk -- see parse_components). Opens the *drain*
+            # (pin 1, the main conduction terminal), not the gate: verified
+            # against a real ngspice run on reverse_polarity_08 that a
+            # gate-open fault is a silent no-op whenever the healthy circuit
+            # already biases the gate near ground through a resistor (a
+            # common gate-pulldown topology, true of that device) -- an ideal
+            # MOSFET model draws zero DC gate current either way, so tying the
+            # gate to a *different* resistor-to-ground changes nothing
+            # measurable. A BJT's base-open (see the Q case above) doesn't
+            # have this problem since real base current is required for the
+            # transistor to conduct at all -- MOSFETs and BJTs aren't
+            # actually analogous here despite both being 3-terminal switches.
+            # Drain-open, like every other component's primary-terminal open
+            # fault (R/L/D/C), always removes the main current path.
+            if len(c.nodes) >= 3:
+                faults.append(_fault(f"{c.ref}_open", f"{c.ref} open circuit (drain)", "easy", "component_failed", [{"op": "open_pin", "ref": c.ref, "pin": 1}]))
+                faults.append(_fault(f"{c.ref}_leaky_short", f"{c.ref} leaky short (drain-source)", "hard", "component_failed", [{"op": "add_short", "between": [c.nodes[0], c.nodes[2]], "resistance": "1k"}]))
         elif c.nodes:
             faults.append(_fault(f"{c.ref}_pin1_open", f"{c.ref} pin 1 open", "medium", "open_pin", [{"op": "open_pin", "ref": c.ref, "pin": 1}]))
 

@@ -62,6 +62,15 @@ def test_parse_page_size_mm_falls_back_when_no_paper_directive_is_present():
     assert kicad_import.parse_page_size_mm("(kicad_sch (version 1))") == kicad_import.DEFAULT_PAGE_SIZE_MM
 
 
+def test_parse_page_size_mm_reads_a_us_standard_size():
+    # Regression test: reverse_polarity_08 (a real imported board) declares
+    # "(paper "USLetter" portrait)" -- missing from STANDARD_PAPER_SIZES_MM
+    # entirely until this device surfaced it, which silently fell back to
+    # DEFAULT_PAGE_SIZE_MM (100x110mm, wildly wrong for an 8.5x11in sheet).
+    assert kicad_import.parse_page_size_mm('(paper "USLetter" portrait)') == pytest.approx((215.9, 279.4))
+    assert kicad_import.parse_page_size_mm('(paper "USLetter")') == pytest.approx((279.4, 215.9))
+
+
 @requires_kicad
 def test_import_probe_geometry_resolves_every_wire_segment_to_its_real_net():
     geo = kicad_import.import_probe_geometry("voltage_divider_01")
