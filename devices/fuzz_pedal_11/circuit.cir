@@ -1,0 +1,152 @@
+* Big Muff-style Fuzz Pedal - FaultFinder device fuzz_pedal_11
+* Real board (see NOTICE.md) takes power from an external 9V supply at
+* DC-Header1; modeled here as an equivalent DC source, same simplification
+* every other device in this project makes at its own input.
+*
+* This is FaultFinder's first device with real front-panel potentiometers
+* and mode-select toggle switches -- a 3-terminal pot is modeled as two
+* fixed resistors meeting at the wiper's own real net name (each half at
+* 50% of the pot's total value, a fixed "noon" setting, since a static DC
+* op-point analysis has no notion of a pot being mid-turn by the player);
+* a rheostat-wired pot (both fixed ends tied to the same net, as this board
+* uses for BLEND/PITCH) collapses to one resistor at 50% of its value. Every
+* toggle switch is modeled at one fixed, explicitly chosen position (see
+* NOTICE.md for which, and why) via a small (10m) resistor standing in for
+* the switch's own near-zero contact resistance between the two real net
+* names it joins -- not a literal shared SPICE node, so both real
+* schematic points stay independently probeable exactly as map.json exposes
+* them.
+*
+* Every stage's own small collector-to-base capacitor (C2/C5/C8, all a
+* real part of the source schematic, not added here) and the always-present
+* clipping-diode rings (D3/D4/D5 and D6/D7/D8: all diodes in the same
+* rotational sense back to their stage's own collector) carry no net DC
+* current on their own -- they only become numerically live once a fault
+* or a probe draws current through them, same "confirmed by actually
+* running every fault" bar as soft_power_switch_10.
+.options gmin=1e-9
+V1 _9V 0 DC 9
+
+* --- Q1: input buffer/preamp (self-biased) ---
+Q1 Net__Q1_C_ Net__Q1_B_ Net__Q1_E_ QMOD
+R2 Net__Q1_B_ 0 100k
+R3 Net__Q1_B_ Net__Q1_C_ 470k
+C2 Net__Q1_C_ Net__Q1_B_ 470p
+R4 Net__Q1_E_ 0 180
+R5 _9V Net__Q1_C_ 10k
+
+* Input gain select (SW4): fixed at the R1/39k ("normal gain") position --
+* R31/390k (the "low gain" alternative) stays wired in circuit.cir but
+* dangles once SW4 doesn't select it, same as every other unselected
+* switch throw on this board.
+R1 Net__C1_Pad2_ Net__SW4_A_ 39k
+R31 Net__SW4_C_ Net__C1_Pad2_ 390k
+RSW4 Send Net__SW4_A_ 10m
+R0 Send 0 2M
+C1 Net__Q1_B_ Net__C1_Pad2_ 0.1u
+
+* SUSTAIN pot (R6, B100k, between Q1's collector and Q2's input) --
+* modeled as two 50k halves meeting at the wiper's real net.
+C3 Net__C3_Pad1_ Net__Q1_C_ 0.47u
+R6A Net__C3_Pad1_ Net__C4_Pad2_ 50k
+R6B Net__C4_Pad2_ Net__R6_Pad1_ 50k
+R7 Net__R6_Pad1_ 0 1k
+C4 Net__C4_Pad1_ Net__C4_Pad2_ 47n
+
+* --- Q2: first clipping stage (self-biased) ---
+R8 Net__C4_Pad1_ Net__Q2_B_ 6.2k
+Q2 Net__D1_A_ Net__Q2_B_ Net__Q2_E_ QMOD
+R9 Net__Q2_B_ 0 100k
+R10 Net__Q2_B_ Net__D1_A_ 470k
+C5 Net__D1_A_ Net__Q2_B_ 470p
+R12 Net__Q2_E_ 0 180
+R11 _9V Net__D1_A_ 100k
+
+* Clipping 1 (SW1): fixed at the silicon-only position -- D1/D2 (1N914,
+* anti-parallel between Q2's collector and this tap) return through C6
+* into Q2's own base, the board's standard Big Muff wiring. The
+* germanium chain (D6/D7/D8) stays wired in its own always-closed loop
+* back to the collector either way (see the file header) but isn't
+* reachable from this tap in this position.
+D1 Net__D1_A_ Net__D1_K_ DMOD
+D2 Net__D1_K_ Net__D1_A_ DMOD
+D6 Net__D6_A_ Net__D1_A_ DMOD
+D7 Net__D7_A_ Net__D6_A_ DMOD
+D8 Net__D1_A_ Net__D7_A_ DMOD
+C6 Net__Q2_B_ Net__C6_Pad2_ 0.1u
+RSW1 Net__D1_K_ Net__C6_Pad2_ 10m
+
+C7 Net__C7_Pad1_ Net__D1_A_ 47n
+R13 Net__C7_Pad1_ Net__Q3_B_ 6.2k
+
+* --- Q3: second clipping stage (self-biased) ---
+Q3 Feedback_loop__optional_ Net__Q3_B_ Net__Q3_E_ QMOD
+R14 Net__Q3_B_ 0 100k
+R15 Net__Q3_B_ Feedback_loop__optional_ 470k
+C8 Feedback_loop__optional_ Net__Q3_B_ 470p
+R16 Net__Q3_E_ 0 180
+R17 _9V Feedback_loop__optional_ 10k
+
+* Clipping 2 (SW2): fixed at the silicon-only position, mirroring SW1
+* above -- D3/D4/D5's own same-direction ring is always closed back to
+* Q3's collector; D9/D10 (the LED-clipping alternative) dangle in this
+* position, same as the germanium chain above.
+D3 Feedback_loop__optional_ Net__D3_K_ DMOD
+D4 Net__D3_K_ Net__D4_K_ DMOD
+D5 Net__D4_K_ Feedback_loop__optional_ DMOD
+D9 Net__D10_K_ Feedback_loop__optional_ LEDMOD
+D10 Feedback_loop__optional_ Net__D10_K_ LEDMOD
+C9 Net__Q3_B_ Net__C9_Pad1_ 0.1u
+RSW2 Net__D3_K_ Net__C9_Pad1_ 10m
+
+* --- Tone stack (passive, Q3 collector -> Q4 base) ---
+* Treble path: collector -> C10 -> R18 -> TONE pot's "3" end.
+* Bass path: collector -> R19 (direct) -> TONE pot's "1" end, C11 shunt to GND.
+* TONE (R20, B100k) wiper feeds Q4's base via C12.
+* BODY (R30, B25k) is wired as a rheostat (both non-wiper ends grounded, see
+* file header) trimming the treble path to GND; collapses to one 12.5k
+* resistor. C15/C16 (silkscreened "Fuzz War only") are unpopulated on this
+* regular Big Muff build and are not in this netlist, matching the real BOM.
+C10 Net__C10_Pad1_ Feedback_loop__optional_ 10n
+R19 Feedback_loop__optional_ Net__C11_Pad1_ 10k
+C11 Net__C11_Pad1_ 0 10n
+R18 Net__C15_Pad2_ Net__C10_Pad1_ 2.2k
+R30 Net__C15_Pad2_ 0 12.5k
+R20A Net__C10_Pad1_ Net__C12_Pad2_ 50k
+R20B Net__C12_Pad2_ Net__C11_Pad1_ 50k
+C12 Net__Q4_B_ Net__C12_Pad2_ 47n
+
+* --- Q4: recovery/output stage (fixed-divider bias, not self-bias) ---
+Q4 Net__Q4_C_ Net__Q4_B_ Net__Q4_E_ QMOD
+R21 Net__Q4_B_ 0 100k
+R22 _9V Net__Q4_B_ 470k
+R23 Net__Q4_E_ 0 2.2k
+R24 _9V Net__Q4_C_ 10k
+C13 Net__Q4_C_ Net__C13_Pad2_ 0.1u
+
+* VOLUME pot (R25, A250k): pin1=GND, pin3=signal in (via C13), wiper=Return
+* (off-board, not modeled -- see file header). Modeled as two 125k halves.
+R25A 0 Return 125k
+R25B Return Net__C13_Pad2_ 125k
+
+* --- Feedback loop (optional, off-board footswitch at SW6): left
+* disengaged, its natural/default state -- the real board's own docs call
+* it optional, and most builds never wire the external footswitch up at
+* all. PITCH (R27) and BLEND (R26) are both rheostat-wired (see file
+* header), collapsing to one resistor each at 50% of their value.
+C17 Feedback_loop__optional_ Net__C14_Pad1_ 10n
+R27 Feedback_loop__optional_ Net__C14_Pad1_ 50k
+C14 Net__C14_Pad1_ Net__C14_Pad2_ 0.1u
+R26 Net__C14_Pad2_ Net__SW6_B_ 50k
+
+* --- Power-on indicator LED ---
+* R29's far end is the off-board footswitch's LED-cathode wire (real net
+* Net__Switch_Header1_Pin_4_, not modeled -- see file header), left as a
+* dangling stub like every other off-board connection on this device.
+D11 _9V Net__D11_K_ LEDMOD
+R29 Net__D11_K_ Net__Switch_Header1_Pin_4_ 1k
+
+.model QMOD NPN
+.model DMOD D
+.model LEDMOD D
+.end

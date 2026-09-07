@@ -71,7 +71,22 @@ def import_pcb(device_id: str) -> dict:
         ["kicad-cli", "pcb", "export", "glb", str(out_pcb_path), "-o", str(glb_path), *glb_flags],
         capture_output=True, text=True, timeout=60, env=env,
     )
-    if result.returncode != 0:
+    # kicad-cli's glb exporter returns a nonzero exit code whenever it can't
+    # find or parse the 3D model (.wrl/.step) for *any* footprint on the
+    # board -- found importing fuzz_pedal_11, whose real 3D model library
+    # includes several THT part variants (a DO-35 diode, a TO-92 transistor,
+    # 3mm/5mm THT LEDs, a Bourns trimmer pot) that this system's installed
+    # KiCad 3D model set can't parse (a real "IrrelevantNumber" VRML-parser
+    # error, confirmed by running the exact same kicad-cli command by hand),
+    # plus its own custom footprint library referencing a `${CIRCLE_CIRCUITS}`
+    # environment variable this system never had reason to set. In every
+    # case the exporter still finishes and writes a complete, valid glb --
+    # pads, tracks, silkscreen, and zones are unaffected; only the specific
+    # footprints with a broken/missing 3D model render without a 3D body.
+    # A genuinely fatal failure (a bad .kicad_pcb, a real kicad-cli crash)
+    # doesn't produce an output file at all, so that's the actual failure
+    # signal to check, not the exit code alone.
+    if not (glb_path.is_file() and glb_path.stat().st_size > 0):
         raise PcbImportError(result.stderr or result.stdout)
 
     return manifest

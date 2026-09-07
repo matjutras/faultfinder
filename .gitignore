@@ -52,6 +52,8 @@ devices/*/*.kicad_prl
 !devices/battery_protection_09/*.kicad_pro
 !devices/soft_power_switch_10/*.kicad_pcb
 !devices/soft_power_switch_10/*.kicad_pro
+!devices/fuzz_pedal_11/*.kicad_pcb
+!devices/fuzz_pedal_11/*.kicad_pro
 
 # Editors / OS
 .vscode/
