@@ -1,5 +1,7 @@
 # FaultFinder
 
+[![GitHub](https://img.shields.io/badge/GitHub-matjutras%2Ffaultfinder-181717?logo=github)](https://github.com/matjutras/faultfinder)
+
 See `CLAUDE.md` for architecture and conventions.
 
 ## Backend
